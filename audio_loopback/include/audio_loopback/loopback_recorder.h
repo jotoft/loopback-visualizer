@@ -4,12 +4,19 @@
 #include <string>
 #include <vector>
 
-typedef std::vector<uint16_t> AudioBuffer;
-typedef std::function<void(const AudioBuffer& buffer)> CaptureCallback;
 
 namespace audio
 {
+    struct StereoPacket
+    {
+        float left;
+        float right;
 
+        StereoPacket operator+ (const StereoPacket &first) const
+        {
+            return StereoPacket{left+first.left, right+first.right};
+        }
+    };
 
 struct AudioSinkInfo
 {
@@ -17,8 +24,13 @@ struct AudioSinkInfo
     std::string device_id;
 };
 
+typedef std::vector<StereoPacket> AudioBuffer;
+typedef std::function<bool(const AudioBuffer& buffer)> CaptureCallback;
+
 std::vector<AudioSinkInfo> list_sinks();
 AudioSinkInfo get_default_sink();
+
+// Captures data on the specified audiosink until the capture callback returns false
 void capture_data(CaptureCallback callback, const AudioSinkInfo &sink);
 }
 

@@ -66,16 +66,7 @@ std::ostream &operator<<(std::ostream &os, const tWAVEFORMATEX &waveformatex)
   return os;
 }
 
-struct StereoPacket
-{
-    float left;
-    float right;
 
-    StereoPacket operator+ (const StereoPacket &first) const
-    {
-        return StereoPacket{left+first.left, right+first.right};
-    }
-};
 
 class Device
 {
@@ -110,8 +101,8 @@ public:
       IAudioCaptureClient *captureClient;
       audioClient->GetService(__uuidof(IAudioCaptureClient), reinterpret_cast<void**>(&captureClient));
       audioClient->Start();
-
-      while(true)
+      bool keep_capturing = true;
+      while(keep_capturing)
       {
         StereoPacket *audio_capture_buffer;
         uint32_t num_frames_in_buffer;
@@ -137,10 +128,7 @@ public:
           captureClient->ReleaseBuffer(packet_size);
           if(copy.size() > 0 && packet_size > 0)
           {
-              auto result = std::accumulate(copy.begin(), copy.end(), StereoPacket{0.0F, 0.0F});
-
-              std::cout << copy.rbegin()->left << "\t" << result.left/copy.size() <<  std::endl;
-
+              keep_capturing = callback(copy);
           }
         } while(packet_size != 0);
       }
@@ -260,7 +248,7 @@ public:
     void start_capture()
     {
         m_capturethread = std::thread([this] {m_capturedevice->start_capture(m_callback, m_captureBuffer);});
-      //m_capturedevice->start_capture(m_callback, m_captureBuffer);
+        m_capturethread.detach();
     }
 
 private:

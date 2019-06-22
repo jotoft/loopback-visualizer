@@ -10,6 +10,7 @@
 #include <Audioclient.h>
 #include <chrono>
 #include <thread>
+#include <numeric>
 
 
 namespace
@@ -69,6 +70,11 @@ struct StereoPacket
 {
     float left;
     float right;
+
+    StereoPacket operator+ (const StereoPacket &first) const
+    {
+        return StereoPacket{left+first.left, right+first.right};
+    }
 };
 
 class Device
@@ -116,12 +122,12 @@ public:
         do
         {
           captureClient->GetNextPacketSize(&packet_size);
-          std::cout << copy.size() << std::endl;
-          std::cout << "packet size " << packet_size << std::endl;
+          //std::cout << copy.size() << std::endl;
+          //std::cout << "packet size " << packet_size << std::endl;
 
           copy.reserve(packet_size);
 
-          std::cout << copy.size() << std::endl;
+          //std::cout << copy.size() << std::endl;
 
           captureClient->GetBuffer(reinterpret_cast<uint8_t**>(&audio_capture_buffer), &num_frames_in_buffer, &flags, nullptr, nullptr);
           for(int i = 0; i < packet_size; i++)
@@ -131,7 +137,9 @@ public:
           captureClient->ReleaseBuffer(packet_size);
           if(copy.size() > 0 && packet_size > 0)
           {
-          std::cout << copy.rbegin()->left << " " << copy.capacity() << " " << copy.size() << " " << packet_size <<  std::endl;
+              auto result = std::accumulate(copy.begin(), copy.end(), StereoPacket{0.0F, 0.0F});
+
+              std::cout << copy.rbegin()->left << "\t" << result.left/copy.size() <<  std::endl;
 
           }
         } while(packet_size != 0);
@@ -251,11 +259,13 @@ public:
     };
     void start_capture()
     {
-      m_capturedevice->start_capture(m_callback, m_captureBuffer);
+        m_capturethread = std::thread([this] {m_capturedevice->start_capture(m_callback, m_captureBuffer);});
+      //m_capturedevice->start_capture(m_callback, m_captureBuffer);
     }
 
 private:
     std::shared_ptr<Device> m_capturedevice;
+    std::thread m_capturethread;
     AudioBuffer m_captureBuffer;
     CaptureCallback m_callback;
 };

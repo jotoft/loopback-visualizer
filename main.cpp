@@ -1,7 +1,8 @@
 #include <iostream>
 #include <audio_loopback/ostream_operators.h>
 #include <audio_loopback/loopback_recorder.h>
-
+#include <chrono>
+#include <thread>
 class Initializer
 {
 public:
@@ -29,6 +30,11 @@ int main()
   audio::AudioSinkInfo default_sink = audio::get_default_sink();
 
   audio::capture_data(&audio_callback, default_sink);
+
+  while(true)
+  {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
 
   return 0;
 }

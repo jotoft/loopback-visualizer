@@ -3,20 +3,20 @@ uniform int current_sample;
 
 layout(std140) uniform SamplesBlock
 {
-    float samples[2606];
+    float samples[2400];
 };
 
 float plot(vec2 st, float pct){
-    return  smoothstep( pct-20, pct, st.y) -
-    smoothstep( pct, pct+20, st.y);
+    return  smoothstep( pct-10, pct, st.y) -
+    smoothstep( pct, pct+10, st.y);
 }
 
 out vec4 FragColor;
 void main() {
 
     vec2 st = gl_FragCoord.xy;
-    int buffer_coord = 2606 - int(floor(gl_FragCoord.x));
-    int sample_loc = (buffer_coord+current_sample) %2606;
+    int buffer_coord = int(floor(gl_FragCoord.x));
+    int sample_loc = 2399-(buffer_coord);
     float sampval = samples[sample_loc];
     float val = plot(st, sampval*800);
 

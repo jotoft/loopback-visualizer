@@ -47,8 +47,8 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   mtx.lock();
   static uint32_t step = 0;
   for (const audio::StereoPacket &packet : buffer) {
-    if (step++ % 2 == 0)
-      continue;
+    //if (step++ % 2 == 0)
+    //  continue;
     samples[current_sample].x = (packet.left + 1.0F) / 2.0F;
     current_sample = (current_sample + 1) % samples_buffer;
   }
@@ -90,20 +90,26 @@ void check_shader_link(uint32_t shader)
 int find_sample(const std::vector<float> &pattern, const std::vector<float> &new_samples)
 {
   std::vector<float> conv(new_samples.size());
+  for(auto& result : conv)
+  {
+    result = 10000000000.0F;
+  }
   for (int i = 0; i < new_samples.size(); i++) {
-    float result = 0.0f;
+    float result = 0.0F;
     int j = 0;
     for (auto &sample : pattern) {
-      //auto error = std::abs(sample - new_samples[i + j++]);
+
       if ((i + j) > new_samples.size() - 1) {
-        result = 0.0f;
+        result =1000000000000.0F;
         break;
       }
-      result += sample * new_samples[i + j++];//error*error;
+      auto error = std::abs(sample - new_samples[i + j++]) + 0.001*j;
+      result += error;
+      //result += sample * new_samples[i + j++];//error*error;
     }
     conv[i] = result;
   }
-  int minElementIndex = std::max_element(conv.begin(), conv.end()) - conv.begin();
+  int minElementIndex = std::min_element(conv.begin(), conv.end()) - conv.begin();
   //std::cout << "Min_element" << minElementIndex << "\n";
   return minElementIndex;
 }
@@ -214,20 +220,24 @@ int main()
             - previous_sample);
 
     std::vector<float> prev;
-    for (int i = 0, sample_no = previous_sample; i < 25; i++) {
+    for (int i = 0, sample_no = previous_sample; i < 250; i++) {
       prev.push_back(samples[sample_no--].x);
       if (sample_no < 0)
         sample_no = samples_buffer - 1;
     }
 
     std::vector<float> curr;
-    for (int i = 0, sample_no = current_sample; i < width / 3 + 25; i++) {
+    for (int i = 0, sample_no = current_sample; i < width/3 + 200 ; i++) {
       curr.push_back(samples[sample_no--].x);
       if (sample_no < 0)
         sample_no = samples_buffer - 1;
     }
 
-    int a_sample = curr_sample - find_sample(prev, curr);
+    auto sample_loc = find_sample(prev, curr);
+    //std::cout << curr_sample - sample_loc - previous_sample << "\n";
+    int a_sample = curr_sample - sample_loc;
+
+
     mtx.unlock();
 
     auto start = glfwGetTime();

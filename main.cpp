@@ -1,6 +1,7 @@
 #include <iostream>
 #include <audio_loopback/ostream_operators.h>
 #include <audio_loopback/loopback_recorder.h>
+#include <audio_filters/filters.h>
 #include <chrono>
 #include <thread>
 #include <glad/glad.h>
@@ -44,14 +45,26 @@ static int current_sample = 0;
 
 bool audio_callback(const audio::AudioBuffer &buffer)
 {
+
   mtx.lock();
   static uint32_t step = 0;
+  std::vector<float> new_samples;
   for (const audio::StereoPacket &packet : buffer) {
-    //if (step++ % 2 == 0)
-    //  continue;
-    samples[current_sample].x = (packet.left + 1.0F) / 2.0F;
+    if (step++ % 2 == 0)
+      continue;
+    new_samples.push_back(packet.left);
+  }
+
+  auto filtered = audio::filters::lowpass(new_samples);
+  //std::cout << filtered.size() << " " << new_samples.size();
+
+  for(auto& sample : filtered)
+  {
+    samples[current_sample].x = (sample + 1.0F) / 2.0F;
     current_sample = (current_sample + 1) % samples_buffer;
   }
+
+
   mtx.unlock();
 
   return capturing;
@@ -103,7 +116,7 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
         result =1000000000000.0F;
         break;
       }
-      auto error = std::abs(sample - new_samples[i + j++]) + 0.001*j;
+      auto error = std::abs(sample - new_samples[i + j++]) + 0.00001*j;
       result += error;
       //result += sample * new_samples[i + j++];//error*error;
     }
@@ -219,15 +232,17 @@ int main()
         curr_sample >= previous_sample ? (curr_sample - previous_sample) : ((samples_buffer + curr_sample)
             - previous_sample);
 
+
+
     std::vector<float> prev;
-    for (int i = 0, sample_no = previous_sample; i < 250; i++) {
+    for (int i = 0, sample_no = previous_sample; i < 400; i++) {
       prev.push_back(samples[sample_no--].x);
       if (sample_no < 0)
         sample_no = samples_buffer - 1;
     }
 
     std::vector<float> curr;
-    for (int i = 0, sample_no = current_sample; i < width/3 + 200 ; i++) {
+    for (int i = 0, sample_no = current_sample; i < width/3+600 ; i++) {
       curr.push_back(samples[sample_no--].x);
       if (sample_no < 0)
         sample_no = samples_buffer - 1;

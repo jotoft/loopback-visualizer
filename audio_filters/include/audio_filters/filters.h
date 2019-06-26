@@ -1,11 +1,12 @@
 #ifndef VISUALIZER_FILTERS_H
 #define VISUALIZER_FILTERS_H
+#include <vector>
 
 namespace audio
 {
 namespace filters
 {
-void lowpass();
+std::vector<float> lowpass(const std::vector<float> to_filter);
 }
 }
 

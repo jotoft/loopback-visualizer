@@ -4,3 +4,6 @@
 [submodule "3rdparty/glfw"]
 	path = 3rdparty/glfw
 	url = https://github.com/glfw/glfw
+[submodule "3rdparty/metaFFT"]
+	path = 3rdparty/metaFFT
+	url = https://github.com/syntheticpp/metaFFT

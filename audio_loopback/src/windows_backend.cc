@@ -87,7 +87,7 @@ public:
       WAVEFORMATEXTENSIBLE *format_ex = reinterpret_cast<WAVEFORMATEXTENSIBLE *>(format);
       std::cout << std::hex << format_ex->SubFormat.Data1 << std::dec << std::endl;
 
-      const REFERENCE_TIME ten_ms_in_hns = 20 * (10000);
+      const REFERENCE_TIME ten_ms_in_hns = 10 * (10000);
       // Must be 0 in shared mode
       const REFERENCE_TIME periodicity = 0;
       auto hr = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED,
@@ -108,32 +108,30 @@ public:
       audioClient->Start();
       bool keep_capturing = true;
       while (keep_capturing) {
-        StereoPacket *audio_capture_buffer;
-        uint32_t num_frames_in_buffer;
-        DWORD flags;
-        uint32_t packet_size;
+        // Really short sleep to reduce CPU load of this thread,
+        // might be able to increase it but want to keep latency minimal too.
         std::this_thread::sleep_for(std::chrono::microseconds(1));
-        std::vector<StereoPacket> copy;
+        std::vector<StereoPacket> audio_copy;
+        uint32_t packet_size;
         do {
+          DWORD flags;
+          uint32_t num_frames_in_buffer;
+
           captureClient->GetNextPacketSize(&packet_size);
-          //std::cout << copy.size() << std::endl;
-          //std::cout << "packet size " << packet_size << std::endl;
+          audio_copy.resize(packet_size);
 
-          copy.resize(packet_size);
-
-          //std::cout << copy.size() << std::endl;
-
+          StereoPacket *audio_capture_buffer;
           captureClient->GetBuffer(reinterpret_cast<uint8_t **>(&audio_capture_buffer),
                                    &num_frames_in_buffer,
                                    &flags,
                                    nullptr,
                                    nullptr);
           for (int i = 0; i < packet_size; i++) {
-            copy[i] = audio_capture_buffer[i];
+            audio_copy[i] = audio_capture_buffer[i];
           }
           captureClient->ReleaseBuffer(packet_size);
-          if (copy.size() > 0 && packet_size > 0) {
-            keep_capturing = callback(copy);
+          if (audio_copy.size() > 0 && packet_size > 0) {
+            keep_capturing = callback(audio_copy);
           }
         }
         while (packet_size != 0);

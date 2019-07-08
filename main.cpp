@@ -11,6 +11,7 @@
 #include <mutex>
 #include <algorithm>
 #include <assert.h>
+#include <limits>
 
 const uint32_t width = 2400;
 
@@ -35,11 +36,9 @@ struct vec4
     float w;
 };
 
-const uint32_t samples_buffer = width * 500;
+const uint32_t BUFFER_LENGTH = width * 1000;
 
-static vec4 samples[samples_buffer];
-
-static vec4 samples_to_gpu[width];
+static vec4 samples[BUFFER_LENGTH];
 
 static int current_sample = 0;
 
@@ -50,18 +49,18 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   static uint32_t step = 0;
   std::vector<float> new_samples;
   for (const audio::StereoPacket &packet : buffer) {
-    if (step++ % 2 == 0)
-      continue;
+    //if (step++ % 2 == 0)
+    //  continue;
     new_samples.push_back(packet.left);
   }
 
-  auto filtered = audio::filters::lowpass(new_samples);
+  //auto filtered = audio::filters::lowpass(new_samples);
   //std::cout << filtered.size() << " " << new_samples.size();
 
-  for(auto& sample : filtered)
+  for(auto& sample : new_samples)
   {
     samples[current_sample].x = (sample + 1.0F) / 2.0F;
-    current_sample = (current_sample + 1) % samples_buffer;
+    current_sample = (current_sample + 1) % BUFFER_LENGTH;
   }
 
 
@@ -100,12 +99,16 @@ void check_shader_link(uint32_t shader)
   }
 }
 
+/// Find Samples is used to keep the phase of the drawn waveform the same, if possible.
+/// \param pattern Sample pattern to match
+/// \param new_samples Samples to search for the pattern
+/// \return Best matching index
 int find_sample(const std::vector<float> &pattern, const std::vector<float> &new_samples)
 {
   std::vector<float> conv(new_samples.size());
   for(auto& result : conv)
   {
-    result = 10000000000.0F;
+    result = std::numeric_limits<float>::infinity();
   }
   for (int i = 0; i < new_samples.size(); i++) {
     float result = 0.0F;
@@ -113,7 +116,7 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
     for (auto &sample : pattern) {
 
       if ((i + j) > new_samples.size() - 1) {
-        result =1000000000000.0F;
+        result = std::numeric_limits<float>::infinity();
         break;
       }
       auto error = std::abs(sample - new_samples[i + j++]) + 0.00001*j;
@@ -122,9 +125,7 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
     }
     conv[i] = result;
   }
-  int minElementIndex = std::min_element(conv.begin(), conv.end()) - conv.begin();
-  //std::cout << "Min_element" << minElementIndex << "\n";
-  return minElementIndex;
+  return std::min_element(conv.begin(), conv.end()) - conv.begin();
 }
 
 int main()
@@ -147,7 +148,7 @@ int main()
     return -1;
 
   /* Create a windowed mode window and its OpenGL context */
-  window = glfwCreateWindow(width, 800, "Hello World", NULL, NULL);
+  window = glfwCreateWindow(width, 800, "Audio Visualizer", NULL, NULL);
   if (!window) {
     std::cout << "error 1";
     glfwTerminate();
@@ -223,13 +224,13 @@ int main()
   const float samples_per_a_cycle = 48000.0f / 440.0f;
 
   bool running = true;
-  glfwSwapInterval(1);
+  glfwSwapInterval(0);
   /* Loop until the user closes the window */
   while (capturing) {
     mtx.lock();
     uint32_t curr_sample = current_sample;
     uint32_t samples_diff =
-        curr_sample >= previous_sample ? (curr_sample - previous_sample) : ((samples_buffer + curr_sample)
+        curr_sample >= previous_sample ? (curr_sample - previous_sample) : ((BUFFER_LENGTH + curr_sample)
             - previous_sample);
 
 
@@ -238,14 +239,15 @@ int main()
     for (int i = 0, sample_no = previous_sample; i < 400; i++) {
       prev.push_back(samples[sample_no--].x);
       if (sample_no < 0)
-        sample_no = samples_buffer - 1;
+        sample_no = BUFFER_LENGTH - 1;
     }
 
     std::vector<float> curr;
-    for (int i = 0, sample_no = current_sample; i < width/3+600 ; i++) {
+    const uint32_t lookback = 1400;
+    for (int i = 0, sample_no = current_sample; i < lookback ; i++) {
       curr.push_back(samples[sample_no--].x);
       if (sample_no < 0)
-        sample_no = samples_buffer - 1;
+        sample_no = BUFFER_LENGTH - 1;
     }
 
     auto sample_loc = find_sample(prev, curr);
@@ -259,12 +261,13 @@ int main()
     glClear(GL_COLOR_BUFFER_BIT);
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     GLvoid *p = glMapBuffer(GL_UNIFORM_BUFFER, GL_WRITE_ONLY);
-    for (int i = 0, sample_no = a_sample; i < width; i++) {
+
+    for (int i = 0, sample_no = a_sample; i < 2400; i++) {
       vec4 *p_gpumem = reinterpret_cast<vec4 *>(p);
       p_gpumem[i].x = samples[sample_no].x;
       sample_no = (sample_no - 1);
       if (sample_no < 0)
-        sample_no = samples_buffer - 1;
+        sample_no = BUFFER_LENGTH - 1;
     }
 
 

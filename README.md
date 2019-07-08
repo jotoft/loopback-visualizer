@@ -7,3 +7,6 @@ Except if the source is using the output device in exclusive mode.
 
 
 Currently only support for windows backend.
+
+Note: gif is not as fluent as actually running the software
+![](visualization.gif)

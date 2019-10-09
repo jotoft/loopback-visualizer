@@ -2,8 +2,11 @@ cmake_minimum_required(VERSION 3.13)
 project(visualizer)
 
 set(CMAKE_CXX_STANDARD 14)
-add_compile_options("/arch:AVX2")
-add_compile_options("/fp:fast")
+
+if(WIN32)
+    add_compile_options("/arch:AVX2")
+    add_compile_options("/fp:fast")
+endif()
 
 add_subdirectory(3rdparty/glad)
 add_subdirectory(3rdparty/glfw)

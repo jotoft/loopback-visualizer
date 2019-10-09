@@ -1,5 +1,6 @@
 #include <audio_filters/filters.h>
 #include <vector>
+#include <cstdint>
 
 namespace
 {

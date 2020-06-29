@@ -62,7 +62,10 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   for (const audio::StereoPacket &packet : buffer) {
     //if (step++ % 2 == 0)
     //  continue;
-    new_samples.push_back(packet.left);
+    float new_sample = packet.left*0.5F + packet.right*0.5F;
+    new_sample *= 1.0F;
+    new_samples.push_back(new_sample);
+
   }
   std::vector<std::complex<float>> to_transform(1024);
   for(int i = 0, c = current_sample; i < 1024; i++)
@@ -75,10 +78,31 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   //auto filtered = audio::filters::lowpass(new_samples);
   //std::cout << filtered.size() << " " << new_samples.size();
 
-  for(auto& sample : new_samples)
+  for(int i = 1; i < new_samples.size(); i++)
   {
-    samples[current_sample].x = (sample + 1.0F) / 2.0F;
-    current_sample = (current_sample + 1) % BUFFER_LENGTH;
+      auto& sample_now = new_samples[i-1];
+      auto& sample_next = new_samples[i];
+
+      auto sample_interp = (sample_now + sample_next) / 2.0F;
+
+      float k = sample_next-sample_now;
+      auto sample1 = k*0.25 + sample_now;
+      auto sample2 = k*0.5 + sample_now;
+      auto sample3 = k*0.75 + sample_now;
+
+      samples[current_sample].x = sample_now;
+      current_sample = (current_sample + 1) % BUFFER_LENGTH;
+
+      samples[current_sample].x = sample1;
+      current_sample = (current_sample + 1) % BUFFER_LENGTH;
+
+
+      samples[current_sample].x = sample2;
+      current_sample = (current_sample + 1) % BUFFER_LENGTH;
+
+      samples[current_sample].x = sample3;
+      current_sample = (current_sample + 1) % BUFFER_LENGTH;
+
   }
 
 
@@ -137,8 +161,9 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
         result = std::numeric_limits<float>::infinity();
         break;
       }
-      auto error = std::fabsf(sample - new_samples[i + j++]) + 0.00001*j;
-      result += error;
+      auto error = (sample - new_samples[i + j++]);
+
+      result += error*error;
       //result += sample * new_samples[i + j++];//error*error;
     }
     conv[i] = result;
@@ -244,6 +269,7 @@ int main()
   bool running = true;
   glfwSwapInterval(1);
   /* Loop until the user closes the window */
+    glClear(GL_COLOR_BUFFER_BIT);
   while (capturing) {
     mtx.lock();
     uint32_t curr_sample = current_sample;
@@ -252,35 +278,38 @@ int main()
             - previous_sample);
 
 
+    const int stride = 4;
 
     std::vector<float> prev;
-    for (int i = 0, sample_no = previous_sample; i < 400; i++) {
-      prev.push_back(samples[sample_no--].x);
+    //std::cout << previous_sample % stride;
+    for (int i = 0, sample_no = previous_sample - (previous_sample % stride); i < 600; i++) {
+      prev.push_back(samples[sample_no].x);
+      sample_no -= stride;
       if (sample_no < 0)
         sample_no = BUFFER_LENGTH - 1;
     }
 
     std::vector<float> curr;
-    const uint32_t lookback = 1400;
-    for (int i = 0, sample_no = current_sample; i < lookback ; i++) {
-      curr.push_back(samples[sample_no--].x);
+    const uint32_t lookback = 1800;
+    for (int i = 0, sample_no = current_sample - (current_sample % stride); i < lookback ; i++) {
+      curr.push_back(samples[sample_no].x);
+      sample_no -= stride;
       if (sample_no < 0)
         sample_no = BUFFER_LENGTH - 1;
     }
 
     auto sample_loc = find_sample(prev, curr);
     //std::cout << curr_sample - sample_loc - previous_sample << "\n";
-    int a_sample = curr_sample - sample_loc;
+    int a_sample = curr_sample - sample_loc*stride;
 
 
     mtx.unlock();
 
     auto start = glfwGetTime();
-    glClear(GL_COLOR_BUFFER_BIT);
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
     GLvoid *p = glMapBuffer(GL_UNIFORM_BUFFER, GL_WRITE_ONLY);
 
-    for (int i = 0, sample_no = a_sample; i < 2400; i++) {
+    for (int i = 2399, sample_no = a_sample; i >= 0; i--) {
       vec4 *p_gpumem = reinterpret_cast<vec4 *>(p);
       p_gpumem[i].x = samples[sample_no].x;
       sample_no = (sample_no - 1);

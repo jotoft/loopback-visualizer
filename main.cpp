@@ -164,7 +164,6 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
       auto error = (sample - new_samples[i + j++]);
 
       result += error*error;
-      //result += sample * new_samples[i + j++];//error*error;
     }
     conv[i] = result;
   }
@@ -174,10 +173,10 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
 int main()
 {
   Initializer _init;
-
+  const bool capture = false;
   std::cout << "Using Default Sink" << std::endl;
-  std::cout << audio::get_default_sink() << std::endl;
-  audio::AudioSinkInfo default_sink = audio::get_default_sink();
+  std::cout << audio::get_default_sink(capture) << std::endl;
+  audio::AudioSinkInfo default_sink = audio::get_default_sink(capture);
 
   audio::capture_data(&audio_callback, default_sink);
 
@@ -299,7 +298,6 @@ int main()
     }
 
     auto sample_loc = find_sample(prev, curr);
-    //std::cout << curr_sample - sample_loc - previous_sample << "\n";
     int a_sample = curr_sample - sample_loc*stride;
 
 

@@ -70,8 +70,8 @@ std::ostream &operator<<(std::ostream &os, const tWAVEFORMATEX &waveformatex)
 class Device
 {
 public:
-    Device(IMMDevice *device)
-        : m_device(device)
+    Device(IMMDevice *device, bool is_capture)
+        : m_device(device), m_capture(is_capture)
     {
     }
 
@@ -84,14 +84,17 @@ public:
       audioClient->GetMixFormat(&format);
       std::cout << *format;
 
+
       WAVEFORMATEXTENSIBLE *format_ex = reinterpret_cast<WAVEFORMATEXTENSIBLE *>(format);
       std::cout << std::hex << format_ex->SubFormat.Data1 << std::dec << std::endl;
 
       const REFERENCE_TIME ten_ms_in_hns = 10 * (10000);
       // Must be 0 in shared mode
       const REFERENCE_TIME periodicity = 0;
+      // Set the loopback flag if we are not using a capture device
+      const DWORD stream_flags = m_capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK;
       auto hr = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                        AUDCLNT_STREAMFLAGS_LOOPBACK,
+                                        stream_flags,
                                         ten_ms_in_hns,
                                         periodicity,
                                         format,
@@ -152,7 +155,8 @@ public:
       store->GetValue(PKEY_Device_FriendlyName, &friendly_name);
       store->Release();
       audio::AudioSinkInfo info{StringConverter(friendly_name.pwszVal),
-                                StringConverter(device_id)};
+                                StringConverter(device_id),
+                                m_capture};
       return info;
     }
     ~Device()
@@ -164,6 +168,7 @@ public:
 private:
     IMMDevice *m_device;
     IAudioClient *m_client;
+    bool m_capture;
 };
 
 class DeviceEnumerator
@@ -173,8 +178,8 @@ public:
     class DeviceCollection
     {
     public:
-        DeviceCollection(IMMDeviceCollection *collection)
-            : m_collection(collection)
+        DeviceCollection(IMMDeviceCollection *collection, bool capture)
+            : m_collection(collection), m_capture(capture)
         {}
 
         std::vector<std::shared_ptr<Device>> get_devices()
@@ -188,7 +193,7 @@ public:
             IMMDevice *immDevice;
             auto res = m_collection->Item(i, &immDevice);
             assert(SUCCEEDED(res));
-            devices.push_back(std::make_shared<Device>(immDevice));
+            devices.push_back(std::make_shared<Device>(immDevice, m_capture));
           }
           return devices;
         }
@@ -202,6 +207,7 @@ public:
 
     private:
         IMMDeviceCollection *m_collection;
+        bool m_capture;
     };
 public:
     DeviceEnumerator()
@@ -220,14 +226,24 @@ public:
     {
       IMMDevice *device;
       m_enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &device);
-      return Device(device);
+      bool capture = false;
+      return Device(device, capture);
     }
 
-    DeviceCollection get_render_collection()
+    Device get_default_capture()
+    {
+        IMMDevice *device;
+        m_enumerator->GetDefaultAudioEndpoint(eCapture, eMultimedia, &device);
+        bool capture = true;
+        return Device(device, capture);
+    }
+
+    DeviceCollection get_render_collection(bool capture)
     {
       IMMDeviceCollection *imm_collection;
-      auto result = m_enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &imm_collection);
-      return DeviceCollection(imm_collection);
+      auto type = capture ? eCapture : eRender;
+      auto result = m_enumerator->EnumAudioEndpoints(type, DEVICE_STATE_ACTIVE, &imm_collection);
+      return DeviceCollection(imm_collection, capture);
     }
 
 
@@ -238,10 +254,14 @@ private:
     const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
 };
 
-AudioSinkInfo get_default_sink()
+AudioSinkInfo get_default_sink(bool capture)
 {
   DeviceEnumerator enumerator;
-  return enumerator.get_default();
+
+  if (capture)
+    return enumerator.get_default_capture();
+  else
+    return enumerator.get_default();
 };
 
 class DataCapture
@@ -272,7 +292,8 @@ std::vector<std::shared_ptr<DataCapture>> active_devices;
 void capture_data(CaptureCallback callback, const AudioSinkInfo &sink)
 {
   DeviceEnumerator enumerator;
-  std::vector<std::shared_ptr<Device>> devices = enumerator.get_render_collection().get_devices();
+    std::cout << sink.name << " searching" << std::endl;
+  std::vector<std::shared_ptr<Device>> devices = enumerator.get_render_collection(sink.capture_device).get_devices();
 
   auto device = std::find_if(devices.begin(), devices.end(), [&sink](std::shared_ptr<Device> dev) -> bool
   {
@@ -293,7 +314,7 @@ std::vector<AudioSinkInfo> list_sinks()
 {
   DeviceEnumerator enumerator;
   std::vector<AudioSinkInfo> sinks;
-  DeviceEnumerator::DeviceCollection collection(enumerator.get_render_collection());
+  DeviceEnumerator::DeviceCollection collection(enumerator.get_render_collection(false));
   auto devices = collection.get_devices();
   for (auto &device : devices) {
     sinks.push_back(*device);

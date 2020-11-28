@@ -12,18 +12,9 @@
 #include <algorithm>
 #include <assert.h>
 #include <limits>
-#include <metaFFT/radix2.h>
-#include <metaFFT/radix2_complex.h>
 #include <complex>
-void test_fft(std::vector<std::complex<float>> data) {
-  using namespace metaFFT::radix2::std_complex;
-  using namespace metaFFT::radix2::std_complex::unrolled_loop;  const int N = 512;
-  using metaFFT::radix2::in_place::fft;
-  typedef float float_type;
 
-  auto transform = fft<N, std::complex<float_type>, bit_reverse_policy, butterfly_policy>();
-  transform.forward(data.data());
-}
+
 const uint32_t width = 2400;
 
 std::mutex mtx;
@@ -58,14 +49,13 @@ bool audio_callback(const audio::AudioBuffer &buffer)
 
   mtx.lock();
   static uint32_t step = 0;
-  std::vector<float> new_samples;
+  std::vector<vec4> new_samples;
   for (const audio::StereoPacket &packet : buffer) {
     //if (step++ % 2 == 0)
     //  continue;
     float new_sample = packet.left*0.5F + packet.right*0.5F;
     new_sample *= 1.0F;
-    new_samples.push_back(new_sample);
-
+    new_samples.push_back({new_sample, packet.left, packet.right, 0.0F});
   }
   std::vector<std::complex<float>> to_transform(1024);
   for(int i = 0, c = current_sample; i < 1024; i++)
@@ -78,29 +68,48 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   //auto filtered = audio::filters::lowpass(new_samples);
   //std::cout << filtered.size() << " " << new_samples.size();
 
+
+  auto interpolate = [] (float sample_now, float sample_next){
+      auto sample_interp = (sample_now + sample_next) / 2.0F;
+
+      float k = sample_next-sample_now;
+      auto sample1 = k*0.25F + sample_now;
+      auto sample2 = k*0.5F + sample_now;
+      auto sample3 = k*0.75F + sample_now;
+
+      return vec4{sample1, sample2, sample3, 0.0F};
+  };
+
   for(int i = 1; i < new_samples.size(); i++)
   {
       auto& sample_now = new_samples[i-1];
       auto& sample_next = new_samples[i];
 
-      auto sample_interp = (sample_now + sample_next) / 2.0F;
+      auto interpolated1 = interpolate(sample_now.x, sample_next.x);
+      auto interpolated2 = interpolate(sample_now.y, sample_next.y);
+      auto interpolated3 = interpolate(sample_now.z, sample_next.z);
 
-      float k = sample_next-sample_now;
-      auto sample1 = k*0.25 + sample_now;
-      auto sample2 = k*0.5 + sample_now;
-      auto sample3 = k*0.75 + sample_now;
 
-      samples[current_sample].x = sample_now;
+
+      samples[current_sample].x = sample_now.x;
+      samples[current_sample].y = new_samples[i-1].y;
+      samples[current_sample].z = new_samples[i-1].z;
       current_sample = (current_sample + 1) % BUFFER_LENGTH;
 
-      samples[current_sample].x = sample1;
+      samples[current_sample].x = interpolated1.x;
+      samples[current_sample].y = interpolated2.x;
+      samples[current_sample].z = interpolated3.x;
       current_sample = (current_sample + 1) % BUFFER_LENGTH;
 
 
-      samples[current_sample].x = sample2;
+      samples[current_sample].x = interpolated1.y;
+      samples[current_sample].y = interpolated2.y;
+      samples[current_sample].z = interpolated3.y;
       current_sample = (current_sample + 1) % BUFFER_LENGTH;
 
-      samples[current_sample].x = sample3;
+      samples[current_sample].x = interpolated1.z;
+      samples[current_sample].y = interpolated2.z;
+      samples[current_sample].z = interpolated3.z;
       current_sample = (current_sample + 1) % BUFFER_LENGTH;
 
   }
@@ -173,7 +182,7 @@ int find_sample(const std::vector<float> &pattern, const std::vector<float> &new
 int main()
 {
   Initializer _init;
-  const bool capture = false;
+  const bool capture = true;
   std::cout << "Using Default Sink" << std::endl;
   std::cout << audio::get_default_sink(capture) << std::endl;
   audio::AudioSinkInfo default_sink = audio::get_default_sink(capture);
@@ -266,7 +275,7 @@ int main()
   const float samples_per_a_cycle = 48000.0f / 440.0f;
 
   bool running = true;
-  glfwSwapInterval(1);
+  glfwSwapInterval(0);
   /* Loop until the user closes the window */
     glClear(GL_COLOR_BUFFER_BIT);
   while (capturing) {
@@ -282,7 +291,7 @@ int main()
     std::vector<float> prev;
     //std::cout << previous_sample % stride;
     for (int i = 0, sample_no = previous_sample - (previous_sample % stride); i < 600; i++) {
-      prev.push_back(samples[sample_no].x);
+      prev.push_back(samples[sample_no].y);
       sample_no -= stride;
       if (sample_no < 0)
         sample_no = BUFFER_LENGTH - 1;
@@ -291,7 +300,7 @@ int main()
     std::vector<float> curr;
     const uint32_t lookback = 1800;
     for (int i = 0, sample_no = current_sample - (current_sample % stride); i < lookback ; i++) {
-      curr.push_back(samples[sample_no].x);
+      curr.push_back(samples[sample_no].y);
       sample_no -= stride;
       if (sample_no < 0)
         sample_no = BUFFER_LENGTH - 1;
@@ -310,6 +319,8 @@ int main()
     for (int i = 2399, sample_no = a_sample; i >= 0; i--) {
       vec4 *p_gpumem = reinterpret_cast<vec4 *>(p);
       p_gpumem[i].x = samples[sample_no].x;
+      p_gpumem[i].y = samples[sample_no].y;
+      p_gpumem[i].z = samples[sample_no].z;
       sample_no = (sample_no - 1);
       if (sample_no < 0)
         sample_no = BUFFER_LENGTH - 1;

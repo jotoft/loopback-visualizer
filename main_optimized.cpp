@@ -14,6 +14,7 @@
 #include <limits>
 #include <complex>
 #include <cstring>
+#include <iomanip>
 #include "core/result.h"
 #include "core/option.h"
 #include "core/unit.h"
@@ -29,12 +30,19 @@ public:
     }
 };
 
+struct vec4 {
+    float x;
+    float y; 
+    float z;
+    float w;
+};
+
 // Much smaller display buffer - we only need what's visible
 const uint32_t DISPLAY_SAMPLES = width;
-static float display_buffer[DISPLAY_SAMPLES];
+static vec4 display_buffer[DISPLAY_SAMPLES];
 
 // Pre-allocated buffers to avoid allocations in render loop
-static float audio_read_buffer[4096];
+static float audio_read_buffer[1024];  // Big enough for burst reads
 
 auto load_file(const std::string &filename) -> core::Result<std::string, std::string> {
     std::ifstream file(filename, std::ios::binary);
@@ -100,6 +108,7 @@ int main()
     std::cout << default_sink << std::endl;
 
     // Create lock-free audio capture
+    // TODO: Add config parameter to reduce buffer size for lower latency
     auto audio_capture = audio::create_audio_capture(default_sink);
     auto result = audio_capture->start();
     if (result.is_err()) {
@@ -219,10 +228,14 @@ int main()
     GLint sample_loc = glGetUniformLocation(shaderProgram, "current_sample");
 
     // Timing
-    glfwSwapInterval(1); // VSync
+    glfwSwapInterval(0); // Disable VSync for minimum latency
     
-    // Pre-allocate circular buffer for phase tracking
-    const size_t PHASE_BUFFER_SIZE = 16384;
+    // For FPS calculation
+    double last_fps_time = glfwGetTime();
+    int fps_frame_count = 0;
+    
+    // Pre-allocate circular buffer for phase tracking (minimal for lowest latency)
+    const size_t PHASE_BUFFER_SIZE = 3072;  // Absolute minimum: display buffer + tiny margin
     float phase_buffer[PHASE_BUFFER_SIZE] = {0}; // Initialize to zero
     size_t phase_write_pos = 0;
     
@@ -232,14 +245,22 @@ int main()
     // Set viewport to match framebuffer
     glViewport(0, 0, fb_width, fb_height);
     
-    // Render loop
+    // Render loop with precise 240 FPS timing
+    using clock = std::chrono::high_resolution_clock;
+    using microseconds = std::chrono::microseconds;
+    
+    constexpr auto frame_time = microseconds(4167); // Exactly 1/240 seconds
+    auto next_frame = clock::now();
+    
     while (!glfwWindowShouldClose(window)) {
         // Update viewport if window resizes
         glfwGetFramebufferSize(window, &fb_width, &fb_height);
         glViewport(0, 0, fb_width, fb_height);
         glUniform2f(resolution_loc, (float)fb_width, (float)fb_height);
-        // Read audio samples without blocking
-        size_t samples_read = audio_capture->read_samples(audio_read_buffer, 512);
+        // Read all available audio samples to prevent buffer buildup
+        size_t available = audio_capture->available_samples();
+        if (available > 512) available = 512;  // Limit per frame
+        size_t samples_read = audio_capture->read_samples(audio_read_buffer, available);
         
         if (samples_read > 0) {
             // Add samples directly to phase buffer (no CPU interpolation needed)
@@ -257,13 +278,16 @@ int main()
         float max_sample = 0;
         
         for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-            display_buffer[DISPLAY_SAMPLES - 1 - i] = phase_buffer[read_pos];
+            display_buffer[DISPLAY_SAMPLES - 1 - i].x = phase_buffer[read_pos];
+            display_buffer[DISPLAY_SAMPLES - 1 - i].y = 0.0f;
+            display_buffer[DISPLAY_SAMPLES - 1 - i].z = 0.0f;
+            display_buffer[DISPLAY_SAMPLES - 1 - i].w = 0.0f;
             max_sample = std::max(max_sample, std::abs(phase_buffer[read_pos]));
             read_pos = (read_pos + 1) % PHASE_BUFFER_SIZE;
         }
         
-        // Debug output every 60 frames
-        if (++debug_counter % 60 == 0) {
+        // Debug output less frequently at high FPS
+        if (++debug_counter % 1000 == 0) {
             std::cout << "Max sample: " << max_sample << " | Write pos: " << phase_write_pos << std::endl;
         }
         
@@ -289,13 +313,40 @@ int main()
         glfwSwapBuffers(window);
         glfwPollEvents();
         
-        // Print stats occasionally
-        static int frame_count = 0;
-        if (++frame_count % 120 == 0) {  // Less frequent output
+        // Precise frame timing for exactly 240 FPS
+        next_frame += frame_time;
+        
+        // Sleep until it's time for the next frame
+        auto now = clock::now();
+        if (next_frame > now) {
+            // Use sleep_until for more precise timing
+            std::this_thread::sleep_until(next_frame);
+        } else {
+            // We're behind schedule, reset timing
+            next_frame = now;
+        }
+        
+        // Calculate and print FPS + stats
+        fps_frame_count++;
+        double current_time = glfwGetTime();
+        double fps_delta = current_time - last_fps_time;
+        
+        if (fps_delta >= 2.0) {  // Every 2 seconds
+            double fps = fps_frame_count / fps_delta;
             auto stats = audio_capture->get_stats();
-            std::cout << "Stats - Available: " << stats.available_samples
-                      << ", Overruns: " << stats.overruns
-                      << ", Underruns: " << stats.underruns << std::endl;
+            
+            // Estimate total latency: audio buffer + phase buffer
+            size_t total_buffered = stats.available_samples + (phase_write_pos > DISPLAY_SAMPLES ? DISPLAY_SAMPLES : phase_write_pos);
+            double latency_ms = total_buffered / 44.1;  // 44.1kHz sample rate
+            
+            std::cout << "FPS: " << std::fixed << std::setprecision(1) << fps
+                      << " | Latency: ~" << std::setprecision(1) << latency_ms << "ms"
+                      << " | Audio buf: " << stats.available_samples
+                      << " | Overruns: " << stats.overruns
+                      << " | Underruns: " << stats.underruns << std::endl;
+            
+            fps_frame_count = 0;
+            last_fps_time = current_time;
         }
     }
 

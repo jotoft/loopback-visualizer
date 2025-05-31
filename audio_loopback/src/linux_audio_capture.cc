@@ -59,6 +59,14 @@ private:
         const char* monitor_device = "@DEFAULT_MONITOR@";
         int error = 0;
         
+        // Configure ultra low-latency buffer attributes
+        pa_buffer_attr buffer_attr = {};
+        buffer_attr.fragsize = 64 * sizeof(float) * 2;  // 64 samples = ~1.5ms at 44.1kHz
+        buffer_attr.maxlength = 128 * sizeof(float) * 2;  // Small max buffer
+        buffer_attr.tlength = (uint32_t) -1;
+        buffer_attr.prebuf = (uint32_t) -1;
+        buffer_attr.minreq = (uint32_t) -1;
+        
         pulse_handle_ = pa_simple_new(
             NULL,               // Use default server
             "Visualizer",       // Application name
@@ -67,7 +75,7 @@ private:
             "Audio Loopback",   // Stream description
             &SAMPLE_SPEC,
             NULL,               // Use default channel map
-            NULL,               // Use default buffering attributes
+            &buffer_attr,       // Low-latency buffer attributes
             &error
         );
         
@@ -78,8 +86,8 @@ private:
             return;
         }
         
-        // Main capture loop
-        static constexpr size_t BUFFER_SIZE = 256;
+        // Main capture loop with minimal buffer
+        static constexpr size_t BUFFER_SIZE = 64;  // Ultra-low latency
         AudioBuffer buffer;
         buffer.reserve(BUFFER_SIZE);
         
@@ -113,6 +121,7 @@ private:
 // Factory function implementation
 std::unique_ptr<AudioCapture> create_audio_capture(const AudioSinkInfo& sink) {
     AudioCapture::Config config;
+    config.buffer_size = 4096;  // Small ring buffer for low latency
     config.convert_to_mono = true;
     
     return std::make_unique<LinuxAudioCapture>(sink, std::move(config));

@@ -11,14 +11,12 @@ tasks:
 
   setup:
     desc: "Create build directory and configure cmake with vcpkg"
+    env:
+      VCPKG_FEATURE_FLAGS: manifests
     cmds:
+      - vcpkg integrate install
       - mkdir -p {{.BUILD_DIR}}
-      - |
-        if [ "{{OS}}" = "windows" ]; then
-          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" ..
-        else
-          cd {{.BUILD_DIR}} && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
-        fi
+      - cd {{.BUILD_DIR}} && cmake ..
     sources:
       - CMakeLists.txt
       - "*/CMakeLists.txt"
@@ -72,26 +70,22 @@ tasks:
 
   debug:
     desc: "Build with debug symbols and run with gdb"
+    env:
+      VCPKG_FEATURE_FLAGS: manifests
     cmds:
+      - vcpkg integrate install
       - mkdir -p {{.BUILD_DIR}}-debug
-      - |
-        if [ "{{OS}}" = "windows" ]; then
-          cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" ..
-        else
-          cd {{.BUILD_DIR}}-debug && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
-        fi
+      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
       - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
   release:
     desc: "Build optimized release version"
+    env:
+      VCPKG_FEATURE_FLAGS: manifests
     cmds:
-      - |
-        if [ "{{OS}}" = "windows" ]; then
-          cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" .
-        else
-          VCPKG_FEATURE_FLAGS=manifests cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
-        fi
+      - vcpkg integrate install
+      - cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release .
       - cmake --build {{.BUILD_DIR}}-release --config Release --parallel {{.CORES | default "4"}}
 
   run-release:

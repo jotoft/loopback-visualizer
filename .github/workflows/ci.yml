@@ -37,6 +37,7 @@ jobs:
         $HOME/vcpkg/bootstrap-vcpkg.sh
         echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
         echo "VCPKG_FEATURE_FLAGS=manifests" >> $GITHUB_ENV
+        $HOME/vcpkg/vcpkg integrate install
           
     - name: Install Task
       run: |
@@ -68,8 +69,8 @@ jobs:
         Expand-Archive -Path task.zip -DestinationPath "task-temp" -Force
         Move-Item -Path "task-temp\task.exe" -Destination C:\Windows\System32\
         
-    - name: Install vcpkg dependencies
-      run: vcpkg install --triplet x64-windows
+    - name: Setup vcpkg integration
+      run: vcpkg integrate install
       
     - name: Configure CMake
       run: task setup

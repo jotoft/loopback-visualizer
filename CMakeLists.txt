@@ -13,6 +13,13 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
+# Disable Catch2 tests/examples to speed up builds
+set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(CATCH_DEVELOPMENT_BUILD OFF CACHE BOOL "" FORCE)
+set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CATCH_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(CATCH_BUILD_EXTRA_TESTS OFF CACHE BOOL "" FORCE)
+
 add_subdirectory(3rdparty/glad/cmake)
 add_subdirectory(3rdparty/glfw)
 add_subdirectory(3rdparty/Catch2)

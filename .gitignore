@@ -39,4 +39,4 @@ Thumbs.db
 *.temp
 
 # Shader copies in build
-build*/*.glsl
+build*/*.glslcmake-build-debug/

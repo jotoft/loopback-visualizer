@@ -57,14 +57,14 @@ tasks:
     desc: "Build and run GLFW test"
     deps: [setup]
     cmds:
-      - cd {{.BUILD_DIR}} && make glfwmaintest
+      - cd {{.BUILD_DIR}} && cmake --build . --target glfwmaintest --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}} && ./glfwmaintest
 
   test:
     desc: "Build and run tests"
     deps: [setup]
     cmds:
-      - cd {{.BUILD_DIR}} && make tests -j{{.CORES | default "4"}}
+      - cd {{.BUILD_DIR}} && cmake --build . --target tests --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}} && ./tests/tests
 
   debug:
@@ -72,7 +72,7 @@ tasks:
     cmds:
       - mkdir -p {{.BUILD_DIR}}-debug
       - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
-      - cd {{.BUILD_DIR}}-debug && make -j{{.CORES | default "4"}}
+      - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
   release:

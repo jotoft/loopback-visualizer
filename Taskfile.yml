@@ -13,7 +13,12 @@ tasks:
     desc: "Create build directory and configure cmake with vcpkg"
     cmds:
       - mkdir -p {{.BUILD_DIR}}
-      - cd {{.BUILD_DIR}} && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+      - |
+        if [ "{{OS}}" = "windows" ]; then
+          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" ..
+        else
+          cd {{.BUILD_DIR}} && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+        fi
     sources:
       - CMakeLists.txt
       - "*/CMakeLists.txt"
@@ -69,14 +74,24 @@ tasks:
     desc: "Build with debug symbols and run with gdb"
     cmds:
       - mkdir -p {{.BUILD_DIR}}-debug
-      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+      - |
+        if [ "{{OS}}" = "windows" ]; then
+          cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" ..
+        else
+          cd {{.BUILD_DIR}}-debug && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+        fi
       - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
   release:
     desc: "Build optimized release version"
     cmds:
-      - VCPKG_FEATURE_FLAGS=manifests cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+      - |
+        if [ "{{OS}}" = "windows" ]; then
+          cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" .
+        else
+          VCPKG_FEATURE_FLAGS=manifests cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+        fi
       - cmake --build {{.BUILD_DIR}}-release --config Release --parallel {{.CORES | default "4"}}
 
   run-release:

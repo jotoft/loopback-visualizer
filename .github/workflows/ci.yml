@@ -32,9 +32,11 @@ jobs:
           xvfb
           
     - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgGitCommitId: 'latest'
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+        $HOME/vcpkg/bootstrap-vcpkg.sh
+        echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+        echo "VCPKG_FEATURE_FLAGS=manifests" >> $GITHUB_ENV
           
     - name: Install Task
       run: |

@@ -60,6 +60,14 @@ jobs:
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
       
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Install Python dependencies
+      run: pip install jinja2
+      
     - name: Install Task
       run: |
         $ProgressPreference = 'SilentlyContinue'

@@ -5,11 +5,14 @@ Real-time audio oscilloscope visualization using OpenGL that captures audio from
 ## Features
 
 - **Cross-platform support**: Windows (WASAPI) and Linux (PulseAudio) backends
-- **Real-time visualization**: GPU-accelerated waveform rendering with phase-locked display
+- **Real-time visualization**: GPU-accelerated waveform rendering at 240 FPS
+- **Cross-correlation phase locking**: Advanced oscilloscope-style stable waveform display
+- **Ultra-low latency**: ~5ms in normal mode, ~10-15ms with phase lock enabled
 - **System audio capture**: Monitors default output device (loopback recording)
+- **Input switching**: Toggle between system audio and microphone input
 - **Smooth rendering**: Anti-aliased line drawing with OpenGL shaders
 - **Modern C++**: Uses C++23 with Rust-inspired Result/Option monadic error handling
-- **Audio processing**: Built-in filtering capabilities with custom implementations
+- **Lock-free audio**: Zero-copy audio capture with built-in ring buffer
 - **Test-driven development**: Comprehensive test suite using Catch2
 
 ## Requirements
@@ -46,9 +49,8 @@ set VCPKG_ROOT=C:\vcpkg
 ### Using Task (recommended)
 ```bash
 go-task run         # Build and run debug version
-go-task run-release # Build and run optimized release version  
+go-task release     # Build and run optimized release version (recommended)
 go-task build       # Just build debug version
-go-task release     # Just build release version
 go-task test        # Run test suite
 go-task clean       # Clean build artifacts
 ```
@@ -98,6 +100,23 @@ go-task test  # Run all tests
 ## Usage
 
 The visualizer will automatically detect and use your system's default audio output device. On Linux, it uses PulseAudio's monitor device (`@DEFAULT_MONITOR@`).
+
+### Controls
+
+- **P**: Toggle phase lock ON/OFF (stabilizes waveform display)
+- **I**: Switch between system audio (loopback) and microphone input
+- **ESC/Q**: Quit application
+
+### Phase Locking
+
+The visualizer includes advanced cross-correlation based phase locking that makes the waveform appear stationary, similar to a traditional oscilloscope:
+
+- **Green waveform**: Excellent phase lock (correlation > 0.7)
+- **Yellow waveform**: Moderate lock (correlation 0.5-0.7)
+- **Red waveform**: Poor lock (correlation < 0.5)
+- **Blue bar**: Shows correlation strength at bottom of screen
+
+See [docs/cross-correlation-phase-lock.md](docs/cross-correlation-phase-lock.md) for technical details.
 
 ## Limitations
 

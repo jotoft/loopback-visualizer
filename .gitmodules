@@ -7,3 +7,6 @@
 [submodule "3rdparty/Catch2"]
 	path = 3rdparty/Catch2
 	url = https://github.com/catchorg/Catch2.git
+[submodule "3rdparty/imgui"]
+	path = 3rdparty/imgui
+	url = https://github.com/ocornut/imgui.git

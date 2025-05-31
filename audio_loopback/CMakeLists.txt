@@ -2,7 +2,7 @@
 if(WIN32)
     set(BACKEND "src/windows_backend.cc")
 else()
-    set(BACKEND "src/linux_backend.cc" src/linux_backend.cc)
+    set(BACKEND "src/linux_backend.cc" "src/linux_audio_capture.cc")
 endif()
 
 

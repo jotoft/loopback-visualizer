@@ -28,8 +28,10 @@ add_subdirectory(audio_filters)
 add_subdirectory(tests)
 add_executable(visualizer main.cpp)
 add_executable(glfwmaintest glfwmain.cpp)
+add_executable(audio_example audio_example.cpp)
 target_link_libraries(glfwmaintest glfw glad::glad)
 target_link_libraries(visualizer audio_loopback audio_filters glfw glad::glad core)
+target_link_libraries(audio_example audio_loopback core)
 
 # Copy shader files to build directory whenever they change
 add_custom_command(

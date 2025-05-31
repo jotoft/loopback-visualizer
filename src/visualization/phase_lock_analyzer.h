@@ -9,6 +9,11 @@ namespace visualization {
 
 class PhaseLockAnalyzer {
 public:
+    enum class ReferenceMode {
+        ACCUMULATOR,  // True average with periodic reset
+        EMA          // Exponential moving average
+    };
+    
     struct Config {
         float phase_smoothing;
         float correlation_threshold;
@@ -18,6 +23,8 @@ public:
         bool use_frequency_filter;
         float filter_low_frequency;
         float filter_high_frequency;
+        ReferenceMode reference_mode;
+        int accumulator_reset_count;
         
         Config() 
             : phase_smoothing(0.0f)
@@ -27,7 +34,9 @@ public:
             , display_samples(2400)
             , use_frequency_filter(false)
             , filter_low_frequency(100.0f)
-            , filter_high_frequency(1000.0f) {}
+            , filter_high_frequency(1000.0f)
+            , reference_mode(ReferenceMode::ACCUMULATOR)
+            , accumulator_reset_count(50) {}
     };
     
     struct State {

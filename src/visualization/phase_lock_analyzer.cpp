@@ -99,20 +99,41 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
         const float* buffer_to_use = config_.use_frequency_filter ? filtered_buffer_ : phase_buffer_;
         size_t match_start = (search_start + best_offset) % config_.phase_buffer_size;
         
-        if (reference_count_ == 0) {
-            // First match - copy directly
+        if (config_.reference_mode == ReferenceMode::ACCUMULATOR) {
+            // Accumulator mode - build true average
             for (int i = 0; i < config_.correlation_window_size; ++i) {
-                reference_window_[i] = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
-            }
-            reference_count_ = 1;
-            has_reference_ = true;
-        } else {
-            // Use exponential moving average to blend new match into reference
-            for (int i = 0; i < config_.correlation_window_size; ++i) {
-                float new_sample = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
-                reference_window_[i] = (1.0f - ema_alpha_) * reference_window_[i] + ema_alpha_ * new_sample;
+                reference_accumulator_[i] += buffer_to_use[(match_start + i) % config_.phase_buffer_size];
             }
             reference_count_++;
+            
+            // Update reference window with averaged accumulator
+            for (int i = 0; i < config_.correlation_window_size; ++i) {
+                reference_window_[i] = reference_accumulator_[i] / reference_count_;
+            }
+            has_reference_ = true;
+            
+            // Reset accumulator periodically to adapt to changing signals
+            if (reference_count_ >= config_.accumulator_reset_count) {
+                std::memset(reference_accumulator_, 0, config_.correlation_window_size * sizeof(float));
+                reference_count_ = 0;
+            }
+        } else {
+            // EMA mode - exponential moving average
+            if (reference_count_ == 0) {
+                // First match - copy directly
+                for (int i = 0; i < config_.correlation_window_size; ++i) {
+                    reference_window_[i] = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
+                }
+                reference_count_ = 1;
+                has_reference_ = true;
+            } else {
+                // Blend new match into reference using EMA
+                for (int i = 0; i < config_.correlation_window_size; ++i) {
+                    float new_sample = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
+                    reference_window_[i] = (1.0f - ema_alpha_) * reference_window_[i] + ema_alpha_ * new_sample;
+                }
+                reference_count_++;
+            }
         }
         
         frames_since_good_match_ = 0;

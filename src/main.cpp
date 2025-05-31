@@ -453,12 +453,35 @@ int main() {
                         phase_analyzer.set_config(config);
                     }
                     
-                    float ema_alpha = phase_analyzer.get_ema_alpha();
-                    if (ImGui::SliderFloat("Reference Blend (EMA)", &ema_alpha, 0.01f, 0.5f, "%.3f")) {
-                        phase_analyzer.set_ema_alpha(ema_alpha);
+                    ImGui::Separator();
+                    ImGui::Text("Reference Mode:");
+                    
+                    bool is_accumulator = config.reference_mode == visualization::PhaseLockAnalyzer::ReferenceMode::ACCUMULATOR;
+                    if (ImGui::RadioButton("Accumulator", is_accumulator)) {
+                        config.reference_mode = visualization::PhaseLockAnalyzer::ReferenceMode::ACCUMULATOR;
+                        phase_analyzer.set_config(config);
                     }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Lower = more stable reference, Higher = faster adaptation");
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("EMA", !is_accumulator)) {
+                        config.reference_mode = visualization::PhaseLockAnalyzer::ReferenceMode::EMA;
+                        phase_analyzer.set_config(config);
+                    }
+                    
+                    if (config.reference_mode == visualization::PhaseLockAnalyzer::ReferenceMode::ACCUMULATOR) {
+                        if (ImGui::SliderInt("Reset After", &config.accumulator_reset_count, 10, 200)) {
+                            phase_analyzer.set_config(config);
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Number of matches before resetting accumulator");
+                        }
+                    } else {
+                        float ema_alpha = phase_analyzer.get_ema_alpha();
+                        if (ImGui::SliderFloat("EMA Alpha", &ema_alpha, 0.01f, 0.5f, "%.3f")) {
+                            phase_analyzer.set_ema_alpha(ema_alpha);
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Lower = more stable reference, Higher = faster adaptation");
+                        }
                     }
                     
                     ImGui::Separator();
@@ -569,7 +592,11 @@ int main() {
                 
                 ImGui::Text("Window Size: %d samples", config.correlation_window_size);
                 ImGui::Text("Aggregated Matches: %d", phase_analyzer.get_reference_count());
-                ImGui::Text("EMA Alpha: %.3f", phase_analyzer.get_ema_alpha());
+                if (config.reference_mode == visualization::PhaseLockAnalyzer::ReferenceMode::ACCUMULATOR) {
+                    ImGui::Text("Mode: Accumulator (resets at %d)", config.accumulator_reset_count);
+                } else {
+                    ImGui::Text("Mode: EMA (alpha: %.3f)", phase_analyzer.get_ema_alpha());
+                }
                 
                 ImGui::End();
             }

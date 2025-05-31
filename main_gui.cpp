@@ -121,6 +121,8 @@ auto check_shader_link(uint32_t shader) -> core::Result<core::Unit, std::string>
 struct AppState {
     bool capture_input = false;  // false = loopback, true = input
     std::unique_ptr<audio::AudioCapture>* audio_capture_ptr = nullptr;
+    std::vector<audio::AudioSinkInfo> available_devices;
+    audio::AudioSinkInfo current_device;
 };
 
 int main()
@@ -132,30 +134,51 @@ int main()
     std::unique_ptr<audio::AudioCapture> audio_capture;
     app_state.audio_capture_ptr = &audio_capture;
     
+    // Get available devices
+    auto devices_result = audio::list_sinks();
+    if (devices_result.is_ok()) {
+        app_state.available_devices = devices_result.unwrap();
+    }
+    
+    // Add default input device
+    auto input_device = audio::get_default_sink(true);
+    if (input_device.is_some()) {
+        app_state.available_devices.push_back(input_device.unwrap());
+    }
+    
     // Function to switch audio source
-    auto switch_audio_source = [&app_state, &audio_capture]() {
+    auto switch_audio_source = [&app_state, &audio_capture](const audio::AudioSinkInfo* device = nullptr) {
         // Stop current capture if running
         if (audio_capture) {
             audio_capture->stop();
             audio_capture.reset();
         }
         
-        // Toggle source
-        app_state.capture_input = !app_state.capture_input;
+        audio::AudioSinkInfo selected_device;
         
-        // Get appropriate audio device
-        auto device_opt = audio::get_default_sink(app_state.capture_input);
-        if (device_opt.is_none()) {
-            std::cerr << "No default " << (app_state.capture_input ? "input" : "sink") << " found" << std::endl;
-            return false;
+        if (device) {
+            // Use specified device
+            selected_device = *device;
+            app_state.current_device = selected_device;
+        } else {
+            // Toggle between input and loopback
+            app_state.capture_input = !app_state.capture_input;
+            
+            // Get appropriate audio device
+            auto device_opt = audio::get_default_sink(app_state.capture_input);
+            if (device_opt.is_none()) {
+                std::cerr << "No default " << (app_state.capture_input ? "input" : "sink") << " found" << std::endl;
+                return false;
+            }
+            
+            selected_device = device_opt.unwrap();
+            app_state.current_device = selected_device;
         }
         
-        auto device = device_opt.unwrap();
-        std::cout << "\nSwitching to: " << (app_state.capture_input ? "INPUT (Microphone)" : "LOOPBACK (System Audio)") << std::endl;
-        std::cout << "Device: " << device.name << std::endl;
+        std::cout << "\nSwitching to: " << selected_device.name << std::endl;
         
         // Create new capture
-        audio_capture = audio::create_audio_capture(device);
+        audio_capture = audio::create_audio_capture(selected_device);
         auto result = audio_capture->start();
         if (result.is_err()) {
             std::cerr << "Failed to start audio capture" << std::endl;
@@ -205,7 +228,15 @@ int main()
     // Get actual framebuffer size (for high DPI displays)
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
+    
+    // Calculate DPI scale
+    int window_width, window_height;
+    glfwGetWindowSize(window, &window_width, &window_height);
+    float dpi_scale = (float)fb_width / (float)window_width;
+    
     std::cout << "Window size: " << width << "x900, Framebuffer: " << fb_width << "x" << fb_height << std::endl;
+    std::cout << "DPI scale: " << dpi_scale << std::endl;
+    
     if (!window) {
         std::cout << "error 1";
         glfwTerminate();
@@ -225,9 +256,35 @@ int main()
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     
-    // Setup Platform/Renderer backends
+    // IMPORTANT: Must init backends BEFORE loading fonts
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
+    
+    // Load font at higher resolution for HiDPI
+    io.Fonts->Clear();
+    ImFontConfig font_config;
+    font_config.OversampleH = 3;  // Horizontal oversampling
+    font_config.OversampleV = 3;  // Vertical oversampling
+    font_config.PixelSnapH = true;
+    
+    // Load at size appropriate for DPI
+    float font_size = 13.0f * dpi_scale;
+    io.Fonts->AddFontFromFileTTF("/usr/share/fonts/liberation/LiberationSans-Regular.ttf", font_size, &font_config);
+    
+    // Fallback to default font if file not found
+    if (io.Fonts->Fonts.Size == 0) {
+        font_config.SizePixels = font_size;
+        io.Fonts->AddFontDefault(&font_config);
+    }
+    
+    // Build font atlas
+    io.Fonts->Build();
+    
+    // Don't scale the already-scaled font
+    io.FontGlobalScale = 1.0f;
+    
+    // Scale UI elements
+    ImGui::GetStyle().ScaleAllSizes(dpi_scale);
 
     // Create vertex data for fullscreen quad
     unsigned int VBO;
@@ -576,12 +633,40 @@ int main()
                 }
             }
             
-            // Audio Input Toggle
-            if (ImGui::CollapsingHeader("Audio Source")) {
-                if (ImGui::Button(app_state.capture_input ? "Switch to System Audio" : "Switch to Microphone")) {
-                    switch_audio_source();
+            // Audio Device Selection
+            if (ImGui::CollapsingHeader("Audio Devices", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("Current: %s", app_state.current_device.name.c_str());
+                ImGui::Separator();
+                
+                for (size_t i = 0; i < app_state.available_devices.size(); ++i) {
+                    const auto& device = app_state.available_devices[i];
+                    bool is_selected = (device.device_id == app_state.current_device.device_id);
+                    
+                    std::string label = device.name;
+                    if (device.capture_device) {
+                        label += " [INPUT]";
+                    } else {
+                        label += " [OUTPUT]";
+                    }
+                    
+                    if (ImGui::Selectable(label.c_str(), is_selected)) {
+                        switch_audio_source(&device);
+                    }
                 }
-                ImGui::Text("Current: %s", app_state.capture_input ? "Microphone Input" : "System Audio (Loopback)");
+                
+                ImGui::Separator();
+                if (ImGui::Button("Refresh Device List")) {
+                    auto devices_result = audio::list_sinks();
+                    if (devices_result.is_ok()) {
+                        app_state.available_devices = devices_result.unwrap();
+                        
+                        // Add default input device
+                        auto input_device = audio::get_default_sink(true);
+                        if (input_device.is_some()) {
+                            app_state.available_devices.push_back(input_device.unwrap());
+                        }
+                    }
+                }
             }
             
             // Visual Settings

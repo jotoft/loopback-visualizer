@@ -39,7 +39,9 @@ tasks:
   run:
     desc: "Build and run the visualizer"
     deps: [build]
-    cmd: cd {{.BUILD_DIR}} && ./{{.TARGET}}
+    cmds:
+      - cp *.glsl {{.BUILD_DIR}}/
+      - cd {{.BUILD_DIR}} && ./{{.TARGET}}
 
   clean:
     desc: "Clean build artifacts"

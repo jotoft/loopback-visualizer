@@ -1,6 +1,8 @@
 # Visualization library
 add_library(visualization STATIC
     phase_lock_analyzer.cpp
+    fft.cpp
+    frequency_analyzer.cpp
 )
 
 target_include_directories(visualization PUBLIC

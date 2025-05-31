@@ -16,6 +16,7 @@
 #include "core/option.h"
 #include "core/unit.h"
 #include "visualization/phase_lock_analyzer.h"
+#include "visualization/frequency_analyzer.h"
 
 // ImGui includes
 #include "imgui.h"
@@ -43,6 +44,9 @@ struct GuiState {
     bool phase_lock_enabled = true;  // Enable by default
     bool show_demo_window = false;
     bool show_correlation_graph = true;
+    bool show_reference_waveform = true;
+    bool show_spectrum_analyzer = true;
+    bool show_frequency_peaks = true;
     
     // Visual settings
     ImVec4 waveform_color = ImVec4(0.0f, 1.0f, 0.9f, 1.0f);
@@ -169,8 +173,8 @@ int main() {
     app_state.capture_input = false;
 
     // Load shaders
-    auto soundwave_result = load_file("shaders/soundwave_optimized.glsl");
-    auto vertex_result = load_file("shaders/basic_vertex.glsl");
+    auto soundwave_result = load_file("soundwave_optimized.glsl");
+    auto vertex_result = load_file("basic_vertex.glsl");
 
     if (soundwave_result.is_err()) {
         std::cerr << "Failed to load soundwave shader: " << soundwave_result.error() << std::endl;
@@ -324,6 +328,16 @@ int main() {
     
     visualization::PhaseLockAnalyzer phase_analyzer(analyzer_config);
     
+    // Create frequency analyzer
+    visualization::FrequencyAnalyzer::Config freq_config;
+    freq_config.fft_size = 2048;
+    freq_config.sample_rate = 44100.0f;  // Assuming 44.1kHz
+    freq_config.history_size = 100;
+    freq_config.peak_threshold = 0.05f;
+    freq_config.max_peaks = 5;
+    
+    visualization::FrequencyAnalyzer freq_analyzer(freq_config);
+    
     // FPS calculation
     double last_fps_time = glfwGetTime();
     int fps_frame_count = 0;
@@ -364,6 +378,7 @@ int main() {
         
         if (samples_read > 0) {
             phase_analyzer.add_samples(audio_read_buffer, samples_read);
+            freq_analyzer.process_samples(audio_read_buffer, samples_read);
         }
         
         // Update analyzer config if changed
@@ -484,6 +499,9 @@ int main() {
             ImGui::Separator();
             ImGui::Checkbox("Show Demo Window", &gui_state.show_demo_window);
             ImGui::Checkbox("Show Correlation Graph", &gui_state.show_correlation_graph);
+            ImGui::Checkbox("Show Reference Waveform", &gui_state.show_reference_waveform);
+            ImGui::Checkbox("Show Spectrum Analyzer", &gui_state.show_spectrum_analyzer);
+            ImGui::Checkbox("Show Frequency Peaks", &gui_state.show_frequency_peaks);
             
             ImGui::End();
             
@@ -499,6 +517,145 @@ int main() {
                     std::vector<float> values(history.begin(), history.end());
                     ImGui::PlotLines("Correlation", values.data(), values.size(), 
                                      0, nullptr, 0.0f, 1.0f, ImVec2(0, 150));
+                }
+                
+                ImGui::End();
+            }
+            
+            // Reference waveform window
+            if (gui_state.show_reference_waveform && gui_state.phase_lock_enabled && phase_analyzer.has_reference()) {
+                ImGui::SetNextWindowPos(ImVec2(370, 220), ImGuiCond_FirstUseEver);
+                ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
+                
+                ImGui::Begin("Reference Waveform");
+                
+                const float* ref_window = phase_analyzer.get_reference_window();
+                const auto& config = phase_analyzer.get_config();
+                
+                // Create a vector for ImGui plotting
+                std::vector<float> ref_samples(ref_window, ref_window + config.correlation_window_size);
+                
+                ImGui::PlotLines("Reference", ref_samples.data(), ref_samples.size(),
+                                 0, nullptr, -1.0f, 1.0f, ImVec2(0, 150));
+                
+                ImGui::Text("Window Size: %d samples", config.correlation_window_size);
+                ImGui::Text("Updates every ~42ms (10 frames)");
+                
+                ImGui::End();
+            }
+            
+            // Spectrum Analyzer window
+            if (gui_state.show_spectrum_analyzer) {
+                ImGui::SetNextWindowPos(ImVec2(780, 10), ImGuiCond_FirstUseEver);
+                ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
+                
+                ImGui::Begin("Spectrum Analyzer");
+                
+                const auto& freq_state = freq_analyzer.get_state();
+                const auto& spectrum = freq_state.magnitude_spectrum;
+                
+                if (!spectrum.empty()) {
+                    // Only display up to Nyquist frequency (half the spectrum)
+                    size_t display_bins = spectrum.size() / 2;
+                    
+                    // Create log scale display
+                    std::vector<float> log_spectrum(display_bins);
+                    for (size_t i = 0; i < display_bins; ++i) {
+                        // Convert to dB with -60dB floor
+                        float mag = spectrum[i];
+                        float db = 20.0f * std::log10(std::max(mag, 0.001f));
+                        log_spectrum[i] = std::max(db, -60.0f);
+                    }
+                    
+                    ImGui::PlotLines("Spectrum (dB)", log_spectrum.data(), log_spectrum.size(),
+                                     0, nullptr, -60.0f, 0.0f, ImVec2(0, 200));
+                    
+                    ImGui::Text("Total Energy: %.3f", freq_state.total_energy);
+                    ImGui::Text("Dominant Frequency: %.1f Hz", freq_state.dominant_frequency);
+                }
+                
+                ImGui::Separator();
+                
+                // FFT settings
+                if (ImGui::CollapsingHeader("FFT Settings")) {
+                    auto freq_config = freq_analyzer.get_config();
+                    
+                    int fft_size = (int)freq_config.fft_size;
+                    if (ImGui::Combo("FFT Size", &fft_size, "512\0001024\0002048\0004096\0008192\000")) {
+                        freq_config.fft_size = (size_t)std::pow(2, 9 + fft_size);
+                        freq_analyzer.set_config(freq_config);
+                    }
+                    
+                    if (ImGui::SliderFloat("Peak Threshold", &freq_config.peak_threshold, 0.01f, 0.5f)) {
+                        freq_analyzer.set_config(freq_config);
+                    }
+                    
+                    if (ImGui::SliderInt("Max Peaks", (int*)&freq_config.max_peaks, 1, 10)) {
+                        freq_analyzer.set_config(freq_config);
+                    }
+                }
+                
+                ImGui::End();
+            }
+            
+            // Frequency Peaks window
+            if (gui_state.show_frequency_peaks) {
+                ImGui::SetNextWindowPos(ImVec2(780, 320), ImGuiCond_FirstUseEver);
+                ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_FirstUseEver);
+                
+                ImGui::Begin("Frequency Peaks");
+                
+                const auto& freq_state = freq_analyzer.get_state();
+                const auto& peaks = freq_state.peaks;
+                
+                if (!peaks.empty()) {
+                    ImGui::Columns(3, "PeaksColumns");
+                    ImGui::SetColumnWidth(0, 100);
+                    ImGui::SetColumnWidth(1, 150);
+                    ImGui::SetColumnWidth(2, 150);
+                    
+                    ImGui::Text("Rank");
+                    ImGui::NextColumn();
+                    ImGui::Text("Frequency (Hz)");
+                    ImGui::NextColumn();
+                    ImGui::Text("Magnitude");
+                    ImGui::NextColumn();
+                    ImGui::Separator();
+                    
+                    for (size_t i = 0; i < peaks.size(); ++i) {
+                        ImGui::Text("#%zu", i + 1);
+                        ImGui::NextColumn();
+                        ImGui::Text("%.1f", peaks[i].frequency);
+                        ImGui::NextColumn();
+                        ImGui::Text("%.4f", peaks[i].magnitude);
+                        ImGui::NextColumn();
+                    }
+                    
+                    ImGui::Columns(1);
+                } else {
+                    ImGui::Text("No peaks detected");
+                }
+                
+                ImGui::Separator();
+                
+                // Show peak history as a graph
+                const auto& peak_history = freq_analyzer.get_peak_history();
+                if (!peak_history.empty() && !peak_history.back().empty()) {
+                    ImGui::Text("Dominant Frequency History:");
+                    
+                    std::vector<float> freq_history;
+                    freq_history.reserve(peak_history.size());
+                    
+                    for (const auto& peaks_frame : peak_history) {
+                        if (!peaks_frame.empty()) {
+                            freq_history.push_back(peaks_frame[0].frequency);
+                        } else {
+                            freq_history.push_back(0.0f);
+                        }
+                    }
+                    
+                    ImGui::PlotLines("Frequency (Hz)", freq_history.data(), freq_history.size(),
+                                     0, nullptr, 0.0f, 2000.0f, ImVec2(0, 80));
                 }
                 
                 ImGui::End();

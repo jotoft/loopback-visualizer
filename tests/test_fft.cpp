@@ -2,15 +2,13 @@
 #include <vector>
 #include <complex>
 #include <cmath>
+#include "visualization/fft.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-// Forward declarations of our FFT functions (to be implemented)
-void fft(std::vector<std::complex<float>>& data);
-void ifft(std::vector<std::complex<float>>& data);
-bool is_power_of_two(size_t n);
+using namespace visualization;
 
 TEST_CASE("FFT implementation", "[fft]") {
     

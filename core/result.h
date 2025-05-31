@@ -20,8 +20,8 @@ public:
     static Result Err(const E& error) { return Result(error, ErrTag{}); }
     
     // State queries
-    bool is_ok() const { return is_ok_; }
-    bool is_err() const { return !is_ok_; }
+    [[nodiscard]] bool is_ok() const { return is_ok_; }
+    [[nodiscard]] bool is_err() const { return !is_ok_; }
     
     // Unwrapping (unsafe)
     T unwrap() && {

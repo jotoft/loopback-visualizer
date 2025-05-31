@@ -38,6 +38,16 @@ jobs:
         echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
         echo "VCPKG_FEATURE_FLAGS=manifests" >> $GITHUB_ENV
         $HOME/vcpkg/vcpkg integrate install
+        
+    - name: Debug environment after vcpkg integrate
+      run: |
+        echo "=== Environment variables ==="
+        env | grep -E "(VCPKG|CMAKE)" | sort
+        echo "=== vcpkg list ==="
+        $HOME/vcpkg/vcpkg list
+        echo "=== vcpkg integrate status ==="
+        $HOME/vcpkg/vcpkg integrate remove 2>/dev/null || true
+        $HOME/vcpkg/vcpkg integrate install
           
     - name: Install Task
       run: |
@@ -71,6 +81,16 @@ jobs:
         
     - name: Setup vcpkg integration
       run: vcpkg integrate install
+      
+    - name: Debug environment after vcpkg integrate  
+      run: |
+        echo "=== Environment variables ==="
+        Get-ChildItem Env: | Where-Object { $_.Name -match "VCPKG|CMAKE" } | Sort-Object Name
+        echo "=== vcpkg list ==="
+        vcpkg list
+        echo "=== vcpkg integrate status ==="
+        vcpkg integrate remove 2>$null
+        vcpkg integrate install
       
     - name: Configure CMake
       run: task setup

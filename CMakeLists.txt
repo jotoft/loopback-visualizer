@@ -10,6 +10,7 @@ endif()
 
 add_subdirectory(3rdparty/glad/cmake)
 add_subdirectory(3rdparty/glfw)
+add_subdirectory(3rdparty/Catch2)
 
 # Configure GLAD 2.0 - generate OpenGL 3.3 core profile loader
 glad_add_library(glad_gl_core_33 STATIC API gl:core=3.3)

@@ -50,18 +50,15 @@ jobs:
       run: task test
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
     
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
-      
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
         

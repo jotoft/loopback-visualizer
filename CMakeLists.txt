@@ -8,6 +8,11 @@ if(WIN32)
     add_compile_options("/fp:fast")
 endif()
 
+# Disable GLFW docs/examples/tests to speed up builds
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
 add_subdirectory(3rdparty/glad/cmake)
 add_subdirectory(3rdparty/glfw)
 add_subdirectory(3rdparty/Catch2)

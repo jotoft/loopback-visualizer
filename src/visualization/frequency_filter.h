@@ -31,6 +31,9 @@ public:
     // Returns filtered samples (same size as input)
     std::vector<float> filter_samples(const float* samples, size_t count);
     
+    // Get the filter delay in samples
+    size_t get_filter_delay() const { return config_.fft_size / 2; }
+    
     // Get/set filter configuration
     void set_config(const Config& config);
     const Config& get_config() const { return config_; }

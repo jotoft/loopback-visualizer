@@ -577,11 +577,10 @@ int main() {
                     const float* filtered_buffer = phase_analyzer.get_filtered_buffer();
                     size_t buffer_size = phase_analyzer.get_filtered_buffer_size();
                     
-                    // Display a window of the filtered signal
+                    // Display the same region as the main waveform for comparison
+                    auto state = phase_analyzer.analyze(gui_state.phase_lock_enabled);
                     size_t display_window = std::min((size_t)1024, buffer_size);
-                    size_t start_pos = (phase_analyzer.get_phase_buffer_size() + 
-                                       phase_analyzer.get_phase_buffer_size() - display_window) % 
-                                       phase_analyzer.get_phase_buffer_size();
+                    size_t start_pos = state.read_position;
                     
                     std::vector<float> filtered_display(display_window);
                     for (size_t i = 0; i < display_window; ++i) {

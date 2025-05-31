@@ -35,6 +35,8 @@ add_executable(audio_example audio_example.cpp)
 target_link_libraries(visualizer audio_loopback audio_filters visualization glfw glad::glad core imgui)
 target_link_libraries(audio_example audio_loopback core)
 
+
+
 # Copy shader files to build directory whenever they change
 add_custom_command(
     TARGET visualizer POST_BUILD

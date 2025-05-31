@@ -213,9 +213,13 @@ void PhaseLockAnalyzer::update_reference_window() {
 void PhaseLockAnalyzer::apply_frequency_filter() {
     if (!filtered_buffer_) return;
     
+    // First, copy the entire phase buffer to filtered buffer
+    // This ensures we always have something to display
+    std::memcpy(filtered_buffer_, phase_buffer_, config_.phase_buffer_size * sizeof(float));
+    
     // Create frequency filter with current config
     FrequencyFilter::Config filter_config;
-    filter_config.fft_size = 2048;  // Use fixed size for now
+    filter_config.fft_size = 512;  // Smaller FFT for lower latency
     filter_config.sample_rate = 44100.0f;
     filter_config.low_frequency = config_.filter_low_frequency;
     filter_config.high_frequency = config_.filter_high_frequency;
@@ -227,19 +231,25 @@ void PhaseLockAnalyzer::apply_frequency_filter() {
         filter = std::make_unique<FrequencyFilter>(filter_config);
     }
     
-    // Extract recent samples from circular buffer
-    std::vector<float> samples(config_.phase_buffer_size);
-    size_t read_pos = phase_write_pos_;
-    for (size_t i = 0; i < config_.phase_buffer_size; ++i) {
-        samples[i] = phase_buffer_[read_pos];
-        read_pos = (read_pos + 1) % config_.phase_buffer_size;
+    // Only filter the region we'll use for correlation
+    // This reduces latency and keeps things synchronized
+    const size_t filter_region_size = config_.display_samples + 2048;  // Extra for correlation search
+    size_t start_pos = (phase_write_pos_ + config_.phase_buffer_size - filter_region_size) 
+                      % config_.phase_buffer_size;
+    
+    // Extract the region to filter
+    std::vector<float> samples(filter_region_size);
+    for (size_t i = 0; i < filter_region_size; ++i) {
+        samples[i] = phase_buffer_[(start_pos + i) % config_.phase_buffer_size];
     }
     
     // Apply frequency filter
     auto filtered = filter->filter_samples(samples.data(), samples.size());
     
-    // Copy back to filtered buffer
-    std::memcpy(filtered_buffer_, filtered.data(), filtered.size() * sizeof(float));
+    // Copy back only the filtered region
+    for (size_t i = 0; i < filter_region_size; ++i) {
+        filtered_buffer_[(start_pos + i) % config_.phase_buffer_size] = filtered[i];
+    }
 }
 
 } // namespace visualization

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 project(visualizer)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 23)
 
 if(WIN32)
     add_compile_options("/arch:AVX2")

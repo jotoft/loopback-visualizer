@@ -16,18 +16,27 @@ Real-time audio oscilloscope visualization using OpenGL that captures audio from
 - C++14 compiler
 - OpenGL 3.3+ support
 - Audio system: WASAPI (Windows) or PulseAudio (Linux)
+- [Task](https://taskfile.dev) (optional, for simplified build commands)
 
 ## Building
 
+### Using Task (recommended)
+Install Task first:
+- Arch Linux: `sudo pacman -S go-task` (binary is `go-task`)
+- Install script: `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d`
+- Other platforms: https://taskfile.dev/installation/
+
+```bash
+go-task run    # Build and run (use 'task' if installed via script)
+go-task build  # Just build
+go-task clean  # Clean build artifacts
+```
+
+### Manual build
 ```bash
 mkdir build && cd build
 cmake ..
 make
-```
-
-## Running
-
-```bash
 ./visualizer
 ```
 

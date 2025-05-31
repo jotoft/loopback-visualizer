@@ -69,11 +69,12 @@ void record_loop(audio::CaptureCallback callback)
 
 namespace audio
 {
-    AudioSinkInfo get_default_sink()
+    AudioSinkInfo get_default_sink(bool capture)
     {
         AudioSinkInfo apa;
-        apa.name = "Apa";
-        apa.device_id ="kamu";
+        apa.name = "Default PulseAudio Sink";
+        apa.device_id = "default";
+        apa.capture_device = capture;
         return apa;
     }
 

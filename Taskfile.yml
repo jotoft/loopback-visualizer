@@ -1,0 +1,90 @@
+version: '3'
+
+vars:
+  BUILD_DIR: build
+  TARGET: visualizer
+
+tasks:
+  default:
+    desc: "Show available tasks"
+    cmd: task --list
+
+  setup:
+    desc: "Initial setup - initialize submodules, create build directory and configure cmake"
+    cmds:
+      - test -f 3rdparty/glad/cmake/CMakeLists.txt || (git submodule update --init 3rdparty/glad && git submodule update --init 3rdparty/glfw)
+      - mkdir -p {{.BUILD_DIR}}
+      - cd {{.BUILD_DIR}} && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+    sources:
+      - CMakeLists.txt
+      - "*/CMakeLists.txt"
+    generates:
+      - "{{.BUILD_DIR}}/Makefile"
+
+  build:
+    desc: "Build the project"
+    deps: [setup]
+    cmds:
+      - cd {{.BUILD_DIR}} && make -j{{.CORES | default "4"}}
+    sources:
+      - "**/*.cpp"
+      - "**/*.cc"
+      - "**/*.h"
+      - "**/*.glsl"
+      - CMakeLists.txt
+      - "*/CMakeLists.txt"
+    generates:
+      - "{{.BUILD_DIR}}/{{.TARGET}}"
+
+  run:
+    desc: "Build and run the visualizer"
+    deps: [build]
+    cmds:
+      - cp *.glsl {{.BUILD_DIR}}/
+      - cd {{.BUILD_DIR}} && ./{{.TARGET}}
+
+  clean:
+    desc: "Clean build artifacts"
+    cmd: rm -rf {{.BUILD_DIR}}
+
+  rebuild:
+    desc: "Clean and rebuild"
+    cmds:
+      - task: clean
+      - task: build
+
+  test-glfw:
+    desc: "Build and run GLFW test"
+    deps: [setup]
+    cmds:
+      - cd {{.BUILD_DIR}} && make glfwmaintest
+      - cd {{.BUILD_DIR}} && ./glfwmaintest
+
+  test:
+    desc: "Build and run tests"
+    deps: [setup]
+    cmds:
+      - cd {{.BUILD_DIR}} && make tests -j{{.CORES | default "4"}}
+      - cd {{.BUILD_DIR}} && ./tests/tests
+
+  debug:
+    desc: "Build with debug symbols and run with gdb"
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}-debug
+      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
+      - cd {{.BUILD_DIR}}-debug && make -j{{.CORES | default "4"}}
+      - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
+
+  release:
+    desc: "Build optimized release version"
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}-release
+      - cd {{.BUILD_DIR}}-release && cmake -DCMAKE_BUILD_TYPE=Release ..
+      - cd {{.BUILD_DIR}}-release && make -j{{.CORES | default "4"}}
+
+  run-release:
+    desc: "Build and run optimized release version"
+    cmds:
+      - task: release
+      - cp *.glsl {{.BUILD_DIR}}-release/
+      - cd {{.BUILD_DIR}}-release && ./{{.TARGET}}

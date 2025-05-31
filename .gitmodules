@@ -3,7 +3,7 @@
 	url = https://github.com/Dav1dde/glad.git
 [submodule "3rdparty/glfw"]
 	path = 3rdparty/glfw
-	url = https://github.com/glfw/glfw
-[submodule "3rdparty/metaFFT"]
-	path = 3rdparty/metaFFT
-	url = https://github.com/syntheticpp/metaFFT
+	url = https://github.com/glfw/glfw.git
+[submodule "3rdparty/Catch2"]
+	path = 3rdparty/Catch2
+	url = https://github.com/catchorg/Catch2.git

@@ -11,6 +11,7 @@ add_library(audio_loopback
 
 
 target_include_directories(audio_loopback PUBLIC include)
+target_link_libraries(audio_loopback PUBLIC core)
 
 if(UNIX)
     target_link_libraries(audio_loopback PRIVATE pulse-simple)

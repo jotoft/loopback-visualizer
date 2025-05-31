@@ -184,11 +184,24 @@ int main()
 {
   Initializer _init;
   const bool capture = false;
+  
+  // Get default sink using Option type
+  auto default_sink_opt = audio::get_default_sink(capture);
+  if (default_sink_opt.is_none()) {
+    std::cerr << "No default audio sink found" << std::endl;
+    return -1;
+  }
+  
+  auto default_sink = default_sink_opt.unwrap();
   std::cout << "Using Default Sink" << std::endl;
-  std::cout << audio::get_default_sink(capture) << std::endl;
-  audio::AudioSinkInfo default_sink = audio::get_default_sink(capture);
+  std::cout << default_sink << std::endl;
 
-  audio::capture_data(&audio_callback, default_sink);
+  // Start audio capture with error handling
+  auto capture_result = audio::capture_data(&audio_callback, default_sink);
+  if (capture_result.is_err()) {
+    std::cerr << "Failed to start audio capture" << std::endl;
+    return -1;
+  }
 
   auto soundwave_result = load_file("soundwave.glsl");
   auto vertex_result = load_file("basic_vertex.glsl");

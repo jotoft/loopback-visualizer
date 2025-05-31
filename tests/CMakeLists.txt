@@ -3,10 +3,10 @@ add_executable(tests
     test_main.cpp
     # test_fft.cpp  # Disabled for now
     test_core.cpp
+    test_audio.cpp
 )
 
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
-target_include_directories(tests PRIVATE ../core)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain core audio_loopback)
 
 # Register tests with CTest
 enable_testing()

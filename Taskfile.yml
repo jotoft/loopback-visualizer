@@ -12,7 +12,7 @@ tasks:
   setup:
     desc: "Initial setup - initialize submodules, create build directory and configure cmake"
     cmds:
-      - test -f 3rdparty/glad/CMakeLists.txt || git submodule update --init --recursive
+      - test -f 3rdparty/glad/CMakeLists.txt || (git submodule update --init 3rdparty/glad && git submodule update --init 3rdparty/glfw)
       - mkdir -p {{.BUILD_DIR}}
       - cd {{.BUILD_DIR}} && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
     sources:
@@ -59,6 +59,13 @@ tasks:
     cmds:
       - cd {{.BUILD_DIR}} && make glfwmaintest
       - cd {{.BUILD_DIR}} && ./glfwmaintest
+
+  test:
+    desc: "Build and run tests"
+    deps: [setup]
+    cmds:
+      - cd {{.BUILD_DIR}} && make tests -j{{.CORES | default "4"}}
+      - cd {{.BUILD_DIR}} && ./tests/tests
 
   debug:
     desc: "Build with debug symbols and run with gdb"

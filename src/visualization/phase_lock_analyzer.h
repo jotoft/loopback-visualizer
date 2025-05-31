@@ -62,6 +62,7 @@ public:
     // Get reference window for visualization
     const float* get_reference_window() const { return reference_window_; }
     bool has_reference() const { return has_reference_; }
+    int get_reference_count() const { return reference_count_; }
     
     // Get filtered buffer for visualization
     const float* get_filtered_buffer() const { return filtered_buffer_; }
@@ -80,10 +81,13 @@ private:
     
     // Cross-correlation state
     float* reference_window_ = nullptr;
+    float* reference_accumulator_ = nullptr;  // For averaging multiple good matches
+    int reference_count_ = 0;                 // Number of samples accumulated
     bool has_reference_ = false;
     size_t phase_offset_ = 0;
     size_t target_phase_offset_ = 0;
     int frames_since_reference_ = 0;
+    float last_best_correlation_ = 0.0f;     // Track previous best correlation
     
     // Correlation history
     std::deque<float> correlation_history_;

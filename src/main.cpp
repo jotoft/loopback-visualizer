@@ -560,7 +560,7 @@ int main() {
                                  0, nullptr, -1.0f, 1.0f, ImVec2(0, 150));
                 
                 ImGui::Text("Window Size: %d samples", config.correlation_window_size);
-                ImGui::Text("Updates every ~42ms (10 frames)");
+                ImGui::Text("Aggregated Matches: %d", phase_analyzer.get_reference_count());
                 
                 ImGui::End();
             }

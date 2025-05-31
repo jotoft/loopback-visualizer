@@ -11,7 +11,8 @@ namespace visualization {
 PhaseLockAnalyzer::PhaseLockAnalyzer(const Config& config) 
     : config_(config) {
     phase_buffer_ = new float[config_.phase_buffer_size]();
-    reference_window_ = new float[config_.correlation_window_size];
+    reference_window_ = new float[config_.correlation_window_size]();
+    reference_accumulator_ = new float[config_.correlation_window_size]();
     
     if (config_.use_frequency_filter) {
         filtered_buffer_size_ = config_.phase_buffer_size;
@@ -22,6 +23,7 @@ PhaseLockAnalyzer::PhaseLockAnalyzer(const Config& config)
 PhaseLockAnalyzer::~PhaseLockAnalyzer() {
     delete[] phase_buffer_;
     delete[] reference_window_;
+    delete[] reference_accumulator_;
     delete[] filtered_buffer_;
 }
 
@@ -52,8 +54,8 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
         apply_frequency_filter();
     }
     
-    // Update reference window periodically
-    if (!has_reference_ || frames_since_reference_ > 10) {  // ~0.5 seconds at 240fps
+    // Initialize reference window if we don't have one
+    if (!has_reference_) {
         update_reference_window();
     }
     frames_since_reference_++;
@@ -88,6 +90,37 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
     }
     
     state.best_correlation = max_correlation;
+    
+    // If we found a good match that's different from last time, aggregate it
+    if (max_correlation > config_.correlation_threshold && 
+        std::abs(max_correlation - last_best_correlation_) > 0.01f) {
+        
+        // Extract the matching segment
+        const float* buffer_to_use = config_.use_frequency_filter ? filtered_buffer_ : phase_buffer_;
+        size_t match_start = (search_start + best_offset) % config_.phase_buffer_size;
+        
+        // Add this segment to the accumulator
+        for (int i = 0; i < config_.correlation_window_size; ++i) {
+            reference_accumulator_[i] += buffer_to_use[(match_start + i) % config_.phase_buffer_size];
+        }
+        reference_count_++;
+        
+        // Update reference window with averaged accumulator
+        if (reference_count_ > 0) {
+            for (int i = 0; i < config_.correlation_window_size; ++i) {
+                reference_window_[i] = reference_accumulator_[i] / reference_count_;
+            }
+            has_reference_ = true;
+        }
+        
+        // Reset accumulator periodically to adapt to changing signals
+        if (reference_count_ > 50) {  // Reset after 50 good matches
+            std::memset(reference_accumulator_, 0, config_.correlation_window_size * sizeof(float));
+            reference_count_ = 0;
+        }
+    }
+    
+    last_best_correlation_ = max_correlation;
     
     // Update correlation history
     correlation_history_.push_back(state.best_correlation);
@@ -133,11 +166,14 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
 
 void PhaseLockAnalyzer::reset() {
     std::memset(phase_buffer_, 0, config_.phase_buffer_size * sizeof(float));
+    std::memset(reference_accumulator_, 0, config_.correlation_window_size * sizeof(float));
     phase_write_pos_ = 0;
     has_reference_ = false;
+    reference_count_ = 0;
     phase_offset_ = 0;
     target_phase_offset_ = 0;
     frames_since_reference_ = 0;
+    last_best_correlation_ = 0.0f;
     correlation_history_.clear();
 }
 
@@ -150,8 +186,11 @@ void PhaseLockAnalyzer::set_config(const Config& config) {
     
     if (config.correlation_window_size != config_.correlation_window_size) {
         delete[] reference_window_;
+        delete[] reference_accumulator_;
         reference_window_ = new float[config.correlation_window_size];
+        reference_accumulator_ = new float[config.correlation_window_size]();
         has_reference_ = false;
+        reference_count_ = 0;
     }
     
     // Handle filtered buffer allocation

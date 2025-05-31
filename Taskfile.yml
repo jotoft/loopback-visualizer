@@ -12,7 +12,7 @@ tasks:
   setup:
     desc: "Initial setup - initialize submodules, create build directory and configure cmake"
     cmds:
-      - test -f 3rdparty/glad/CMakeLists.txt || (git submodule update --init 3rdparty/glad && git submodule update --init 3rdparty/glfw)
+      - test -f 3rdparty/glad/cmake/CMakeLists.txt || (git submodule update --init 3rdparty/glad && git submodule update --init 3rdparty/glfw)
       - mkdir -p {{.BUILD_DIR}}
       - cd {{.BUILD_DIR}} && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
     sources:
@@ -81,3 +81,10 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}-release
       - cd {{.BUILD_DIR}}-release && cmake -DCMAKE_BUILD_TYPE=Release ..
       - cd {{.BUILD_DIR}}-release && make -j{{.CORES | default "4"}}
+
+  run-release:
+    desc: "Build and run optimized release version"
+    cmds:
+      - task: release
+      - cp *.glsl {{.BUILD_DIR}}-release/
+      - cd {{.BUILD_DIR}}-release && ./{{.TARGET}}

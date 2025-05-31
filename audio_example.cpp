@@ -57,7 +57,8 @@ int main() {
             std::cout << "\nStats - Available: " << stats.available_samples 
                       << ", Total: " << stats.total_samples_captured
                       << ", Overruns: " << stats.overruns
-                      << ", Underruns: " << stats.underruns << "\n";
+                      << ", Underruns: " << stats.underruns 
+                      << (stats.underruns > 0 ? " (normal at startup)" : "") << "\n";
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS

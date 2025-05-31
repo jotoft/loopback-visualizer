@@ -16,7 +16,7 @@ tasks:
     cmds:
       - vcpkg integrate install
       - mkdir -p {{.BUILD_DIR}}
-      - cd {{.BUILD_DIR}} && cmake ..
+      - cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
     sources:
       - CMakeLists.txt
       - "*/CMakeLists.txt"
@@ -75,7 +75,7 @@ tasks:
     cmds:
       - vcpkg integrate install
       - mkdir -p {{.BUILD_DIR}}-debug
-      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
+      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
       - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
@@ -85,7 +85,7 @@ tasks:
       VCPKG_FEATURE_FLAGS: manifests
     cmds:
       - vcpkg integrate install
-      - cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release .
+      - cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" .
       - cmake --build {{.BUILD_DIR}}-release --config Release --parallel {{.CORES | default "4"}}
 
   run-release:

@@ -446,7 +446,7 @@ int main() {
                     if (ImGui::SliderFloat("Phase Smoothing", &config.phase_smoothing, 0.0f, 0.99f)) {
                         phase_analyzer.set_config(config);
                     }
-                    if (ImGui::SliderFloat("Correlation Threshold", &config.correlation_threshold, 0.3f, 0.95f)) {
+                    if (ImGui::SliderFloat("Correlation Threshold", &config.correlation_threshold, 0.1f, 0.95f)) {
                         phase_analyzer.set_config(config);
                     }
                     if (ImGui::SliderInt("Correlation Window", &config.correlation_window_size, 128, 1024)) {

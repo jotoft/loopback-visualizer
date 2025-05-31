@@ -20,11 +20,13 @@ class PulseAudioWrapper
 public:
     static constexpr uint32_t BUFSIZE = 256;
     PulseAudioWrapper() {
+        // Use monitor device to capture system audio output (loopback)
+        const char* monitor_device = "@DEFAULT_MONITOR@";  // PulseAudio will resolve to default sink monitor
         pulse_simple_api = pa_simple_new(NULL,               // Use the default server.
                               "Visualizer",           // Our application's name.
                               PA_STREAM_RECORD,
-                                         NULL,               // Use the default device. //TODO CHECK
-                              "Record",            // Description of our stream.
+                              monitor_device,         // Use monitor device for loopback
+                              "Audio Loopback",       // Description of our stream.
                               &SAMPLE_SPEC,                // Our sample format.
                               NULL,               // Use default channel map
                               NULL,               // Use default buffering attributes.

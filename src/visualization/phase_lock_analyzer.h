@@ -67,6 +67,10 @@ public:
     // Get filtered buffer for visualization
     const float* get_filtered_buffer() const { return filtered_buffer_; }
     size_t get_filtered_buffer_size() const { return filtered_buffer_size_; }
+    
+    // Get/set EMA alpha for reference averaging
+    float get_ema_alpha() const { return ema_alpha_; }
+    void set_ema_alpha(float alpha) { ema_alpha_ = std::max(0.01f, std::min(0.5f, alpha)); }
 
 private:
     Config config_;
@@ -87,7 +91,9 @@ private:
     size_t phase_offset_ = 0;
     size_t target_phase_offset_ = 0;
     int frames_since_reference_ = 0;
+    int frames_since_good_match_ = 0;        // Frames since last good correlation
     float last_best_correlation_ = 0.0f;     // Track previous best correlation
+    float ema_alpha_ = 0.1f;                 // EMA blending factor
     
     // Correlation history
     std::deque<float> correlation_history_;

@@ -453,6 +453,14 @@ int main() {
                         phase_analyzer.set_config(config);
                     }
                     
+                    float ema_alpha = phase_analyzer.get_ema_alpha();
+                    if (ImGui::SliderFloat("Reference Blend (EMA)", &ema_alpha, 0.01f, 0.5f, "%.3f")) {
+                        phase_analyzer.set_ema_alpha(ema_alpha);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Lower = more stable reference, Higher = faster adaptation");
+                    }
+                    
                     ImGui::Separator();
                     
                     // Frequency filter settings
@@ -561,6 +569,7 @@ int main() {
                 
                 ImGui::Text("Window Size: %d samples", config.correlation_window_size);
                 ImGui::Text("Aggregated Matches: %d", phase_analyzer.get_reference_count());
+                ImGui::Text("EMA Alpha: %.3f", phase_analyzer.get_ema_alpha());
                 
                 ImGui::End();
             }

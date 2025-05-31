@@ -99,24 +99,32 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
         const float* buffer_to_use = config_.use_frequency_filter ? filtered_buffer_ : phase_buffer_;
         size_t match_start = (search_start + best_offset) % config_.phase_buffer_size;
         
-        // Add this segment to the accumulator
-        for (int i = 0; i < config_.correlation_window_size; ++i) {
-            reference_accumulator_[i] += buffer_to_use[(match_start + i) % config_.phase_buffer_size];
-        }
-        reference_count_++;
-        
-        // Update reference window with averaged accumulator
-        if (reference_count_ > 0) {
+        if (reference_count_ == 0) {
+            // First match - copy directly
             for (int i = 0; i < config_.correlation_window_size; ++i) {
-                reference_window_[i] = reference_accumulator_[i] / reference_count_;
+                reference_window_[i] = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
             }
+            reference_count_ = 1;
             has_reference_ = true;
+        } else {
+            // Use exponential moving average to blend new match into reference
+            for (int i = 0; i < config_.correlation_window_size; ++i) {
+                float new_sample = buffer_to_use[(match_start + i) % config_.phase_buffer_size];
+                reference_window_[i] = (1.0f - ema_alpha_) * reference_window_[i] + ema_alpha_ * new_sample;
+            }
+            reference_count_++;
         }
         
-        // Reset accumulator periodically to adapt to changing signals
-        if (reference_count_ > 50) {  // Reset after 50 good matches
-            std::memset(reference_accumulator_, 0, config_.correlation_window_size * sizeof(float));
+        frames_since_good_match_ = 0;
+    } else {
+        frames_since_good_match_++;
+        
+        // Reset reference if we haven't had a good match for a while (2 seconds at 240fps)
+        if (frames_since_good_match_ > 480 && has_reference_) {
+            has_reference_ = false;
             reference_count_ = 0;
+            frames_since_good_match_ = 0;
+            // Next good match will reinitialize the reference
         }
     }
     
@@ -173,6 +181,7 @@ void PhaseLockAnalyzer::reset() {
     phase_offset_ = 0;
     target_phase_offset_ = 0;
     frames_since_reference_ = 0;
+    frames_since_good_match_ = 0;
     last_best_correlation_ = 0.0f;
     correlation_history_.clear();
 }

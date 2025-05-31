@@ -27,10 +27,12 @@ add_subdirectory(audio_loopback)
 add_subdirectory(audio_filters)
 add_subdirectory(tests)
 add_executable(visualizer main.cpp)
+add_executable(visualizer_optimized main_optimized.cpp)
 add_executable(glfwmaintest glfwmain.cpp)
 add_executable(audio_example audio_example.cpp)
 target_link_libraries(glfwmaintest glfw glad::glad)
 target_link_libraries(visualizer audio_loopback audio_filters glfw glad::glad core)
+target_link_libraries(visualizer_optimized audio_loopback audio_filters glfw glad::glad core)
 target_link_libraries(audio_example audio_loopback core)
 
 # Copy shader files to build directory whenever they change
@@ -40,5 +42,15 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/soundwave.glsl
         ${CMAKE_SOURCE_DIR}/basic_vertex.glsl
         $<TARGET_FILE_DIR:visualizer>
+    COMMENT "Copying shader files to build directory"
+)
+
+add_custom_command(
+    TARGET visualizer_optimized POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/soundwave.glsl
+        ${CMAKE_SOURCE_DIR}/soundwave_optimized.glsl
+        ${CMAKE_SOURCE_DIR}/basic_vertex.glsl
+        $<TARGET_FILE_DIR:visualizer_optimized>
     COMMENT "Copying shader files to build directory"
 )

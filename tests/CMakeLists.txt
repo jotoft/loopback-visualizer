@@ -1,4 +1,4 @@
-# Use Catch2 from submodule - no need for find_package since we build it
+# Use Catch2 from vcpkg
 add_executable(tests 
     test_main.cpp
     # test_fft.cpp  # Disabled for now

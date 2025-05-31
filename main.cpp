@@ -4,7 +4,7 @@
 #include <audio_filters/filters.h>
 #include <chrono>
 #include <thread>
-#include <glad/gl.h>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <sstream>
@@ -189,7 +189,7 @@ int main()
 
   /* Make the window's context current */
   glfwMakeContextCurrent(window);
-  gladLoadGL(glfwGetProcAddress);
+  gladLoadGL();
 
   unsigned int VBO;
   glGenBuffers(1, &VBO);

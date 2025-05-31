@@ -12,10 +12,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
         
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -32,6 +30,11 @@ jobs:
           wayland-protocols \
           libxkbcommon-dev \
           xvfb
+          
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: 'latest'
           
     - name: Install Task
       run: |
@@ -54,17 +57,7 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
         
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-        
-    - name: Install Python dependencies
-      run: pip install jinja2
-      
     - name: Install Task
       run: |
         $ProgressPreference = 'SilentlyContinue'
@@ -73,6 +66,9 @@ jobs:
         Expand-Archive -Path task.zip -DestinationPath "task-temp" -Force
         Move-Item -Path "task-temp\task.exe" -Destination C:\Windows\System32\
         
+    - name: Install vcpkg dependencies
+      run: vcpkg install --triplet x64-windows
+      
     - name: Configure CMake
       run: task setup
       

@@ -10,16 +10,20 @@ tasks:
     cmd: task --list
 
   setup:
-    desc: "Initial setup - initialize submodules, create build directory and configure cmake"
+    desc: "Create build directory and configure cmake with vcpkg"
     cmds:
-      - test -f 3rdparty/glad/cmake/CMakeLists.txt || (git submodule update --init 3rdparty/glad && git submodule update --init 3rdparty/glfw)
       - mkdir -p {{.BUILD_DIR}}
-      - cd {{.BUILD_DIR}} && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+      - |
+        if [ "$(uname)" = "Darwin" ] || [ "$(uname)" = "Linux" ]; then
+          VCPKG_ROOT="${VCPKG_ROOT:-$HOME/vcpkg}"
+          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+        else
+          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$Env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+        fi
     sources:
       - CMakeLists.txt
       - "*/CMakeLists.txt"
-    generates:
-      - "{{.BUILD_DIR}}/Makefile"
+      - vcpkg.json
 
   build:
     desc: "Build the project"

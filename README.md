@@ -18,16 +18,32 @@ Real-time audio oscilloscope visualization using OpenGL that captures audio from
 - C++23 compiler (GCC 13+, Clang 16+, MSVC 19.35+)
 - OpenGL 3.3+ support
 - Audio system: WASAPI (Windows) or PulseAudio (Linux)
+- [vcpkg](https://vcpkg.io) package manager for dependencies
 - [Task](https://taskfile.dev) (recommended for simplified build commands)
 
 ## Building
 
-### Using Task (recommended)
-Install Task first:
+### Prerequisites
+
+**Install vcpkg**: 
+```bash
+# Linux/macOS
+git clone https://github.com/Microsoft/vcpkg.git ~/.local/share/vcpkg
+~/.local/share/vcpkg/bootstrap-vcpkg.sh
+export VCPKG_ROOT=$HOME/.local/share/vcpkg
+
+# Windows  
+git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+set VCPKG_ROOT=C:\vcpkg
+```
+
+**Install Task** (optional but recommended):
 - Arch Linux: `sudo pacman -S go-task` (binary is `go-task`)
 - Install script: `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d`
 - Other platforms: https://taskfile.dev/installation/
 
+### Using Task (recommended)
 ```bash
 go-task run         # Build and run debug version
 go-task run-release # Build and run optimized release version  
@@ -39,21 +55,28 @@ go-task clean       # Clean build artifacts
 
 ### Manual build
 ```bash
-# Initialize submodules first
-git submodule update --init --recursive
+# Ensure VCPKG_ROOT is set and VCPKG_FEATURE_FLAGS includes manifests
+export VCPKG_FEATURE_FLAGS=manifests
 
 # Debug build
-mkdir build && cd build
-cmake ..
-make
-./visualizer
+VCPKG_FEATURE_FLAGS=manifests cmake -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake --build build
+./build/visualizer
 
 # Release build  
-mkdir build-release && cd build-release
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-./visualizer
+VCPKG_FEATURE_FLAGS=manifests cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake --build build-release --config Release
+./build-release/visualizer
 ```
+
+### Dependencies
+
+The project uses vcpkg manifest mode with `vcpkg.json` to automatically manage dependencies:
+- **GLAD**: OpenGL function loader
+- **GLFW**: Cross-platform windowing and input
+- **Catch2**: Testing framework
+
+Dependencies are automatically installed by vcpkg during the CMake configure step.
 
 ## Development
 

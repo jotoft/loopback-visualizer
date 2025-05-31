@@ -43,3 +43,4 @@ build*/*.glsl
 
 # IDE build directories
 cmake-build-*/
+vcpkg_installed/

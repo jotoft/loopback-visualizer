@@ -15,19 +15,32 @@ Real-time audio oscilloscope that captures system audio output and visualizes it
 - **Main Loop**: `main.cpp` - Coordinates audio capture, processing, and rendering
 
 ## Build System
+**vcpkg Package Manager**: Uses vcpkg manifest mode for dependency management with automatic installation during CMake configure.
+
+### Prerequisites
+- vcpkg installed with `VCPKG_ROOT` environment variable set
+- Enable manifest mode: `export VCPKG_FEATURE_FLAGS=manifests`
+
+### Build Commands
 ```bash
-# Debug build
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make
+# Debug build (from project root)
+VCPKG_FEATURE_FLAGS=manifests cmake -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake --build build
 
 # Release build  
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+VCPKG_FEATURE_FLAGS=manifests cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake --build build-release --config Release
 
-# Run tests
-task test
+# Using Task runner (recommended)
+task test    # Run all tests including Result/Option tests
+task run     # Build and run debug visualizer
+task release # Build release version
 ```
+
+### Dependencies (vcpkg.json)
+- **GLAD**: OpenGL function loader (`glad::glad`)
+- **GLFW**: Cross-platform windowing (`glfw`)  
+- **Catch2**: Testing framework (`Catch2::Catch2WithMain`)
 
 ## Key Files
 - `main.cpp` - Main application with OpenGL setup and audio callback
@@ -36,6 +49,8 @@ task test
 - `audio_filters/` - Signal processing utilities
 - `core/result.h` - Monadic Result<T,E> type for error handling
 - `core/option.h` - Monadic Option<T> type for nullable values
+- `vcpkg.json` - Package manifest for dependency management
+- `Taskfile.yml` - Task runner configuration for cross-platform builds
 
 ## Coding Guidelines
 

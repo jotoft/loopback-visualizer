@@ -13,13 +13,7 @@ tasks:
     desc: "Create build directory and configure cmake with vcpkg"
     cmds:
       - mkdir -p {{.BUILD_DIR}}
-      - |
-        if [ "$(uname)" = "Darwin" ] || [ "$(uname)" = "Linux" ]; then
-          VCPKG_ROOT="${VCPKG_ROOT:-$HOME/vcpkg}"
-          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
-        else
-          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$Env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
-        fi
+      - cd {{.BUILD_DIR}} && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
     sources:
       - CMakeLists.txt
       - "*/CMakeLists.txt"
@@ -75,16 +69,15 @@ tasks:
     desc: "Build with debug symbols and run with gdb"
     cmds:
       - mkdir -p {{.BUILD_DIR}}-debug
-      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
+      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
       - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
   release:
     desc: "Build optimized release version"
     cmds:
-      - mkdir -p {{.BUILD_DIR}}-release
-      - cd {{.BUILD_DIR}}-release && cmake -DCMAKE_BUILD_TYPE=Release ..
-      - cd {{.BUILD_DIR}}-release && cmake --build . --config Release --parallel {{.CORES | default "4"}}
+      - VCPKG_FEATURE_FLAGS=manifests cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+      - cmake --build {{.BUILD_DIR}}-release --config Release --parallel {{.CORES | default "4"}}
 
   run-release:
     desc: "Build and run optimized release version"

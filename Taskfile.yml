@@ -3,94 +3,81 @@ version: '3'
 vars:
   BUILD_DIR: build
   TARGET: visualizer
+  CORES: '{{.CORES | default "4"}}'
+
 
 tasks:
   default:
-    desc: "Show available tasks"
+    desc: Show available tasks
     cmd: task --list
 
   setup:
-    desc: "Create build directory and configure cmake with vcpkg"
-    env:
-      VCPKG_FEATURE_FLAGS: manifests
+    desc: Configure CMake
     cmds:
-      - vcpkg integrate install
-      - mkdir -p {{.BUILD_DIR}}
-      - cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
+      - cmake -B {{.BUILD_DIR}} -S .
     sources:
       - CMakeLists.txt
-      - "*/CMakeLists.txt"
-      - vcpkg.json
+      - "**/CMakeLists.txt"
 
   build:
-    desc: "Build the project"
+    desc: Build the project
     deps: [setup]
     cmds:
-      - cd {{.BUILD_DIR}} && cmake --build . --parallel {{.CORES | default "4"}}
+      - cmake --build {{.BUILD_DIR}} --parallel {{.CORES}}
     sources:
-      - "**/*.cpp"
-      - "**/*.cc"
-      - "**/*.h"
-      - "**/*.glsl"
+      - "**/*.{cpp,cc,h,glsl}"
       - CMakeLists.txt
-      - "*/CMakeLists.txt"
+      - "**/CMakeLists.txt"
     generates:
-      - "{{.BUILD_DIR}}/{{.TARGET}}"
+      - '{{.BUILD_DIR}}/{{.TARGET}}'
 
   run:
-    desc: "Build and run the visualizer"
+    desc: Build and run the visualizer
     deps: [build]
     cmds:
       - cp *.glsl {{.BUILD_DIR}}/
-      - cd {{.BUILD_DIR}} && ./{{.TARGET}}
+      - ./{{.BUILD_DIR}}/{{.TARGET}}
 
   clean:
-    desc: "Clean build artifacts"
-    cmd: rm -rf {{.BUILD_DIR}}
+    desc: Remove build artifacts
+    cmd: rm -rf {{.BUILD_DIR}}*
 
   rebuild:
-    desc: "Clean and rebuild"
+    desc: Clean and rebuild
     cmds:
       - task: clean
       - task: build
 
   test-glfw:
-    desc: "Build and run GLFW test"
+    desc: Build and run GLFW test
     deps: [setup]
     cmds:
-      - cd {{.BUILD_DIR}} && cmake --build . --target glfwmaintest --parallel {{.CORES | default "4"}}
-      - cd {{.BUILD_DIR}} && ./glfwmaintest
+      - cmake --build {{.BUILD_DIR}} --target glfwmaintest --parallel {{.CORES}}
+      - ./{{.BUILD_DIR}}/glfwmaintest
 
   test:
-    desc: "Build and run tests"
+    desc: Build and run tests
     deps: [setup]
     cmds:
-      - cd {{.BUILD_DIR}} && cmake --build . --target tests --parallel {{.CORES | default "4"}}
-      - cd {{.BUILD_DIR}} && ctest --output-on-failure
+      - cmake --build {{.BUILD_DIR}} --target tests --parallel {{.CORES}}
+      - ctest --test-dir {{.BUILD_DIR}} --output-on-failure
 
   debug:
-    desc: "Build with debug symbols and run with gdb"
-    env:
-      VCPKG_FEATURE_FLAGS: manifests
+    desc: Build with debug symbols and run with gdb
     cmds:
-      - vcpkg integrate install
-      - mkdir -p {{.BUILD_DIR}}-debug
-      - cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" ..
-      - cd {{.BUILD_DIR}}-debug && cmake --build . --parallel {{.CORES | default "4"}}
+      - cmake -B {{.BUILD_DIR}}-debug -S . -DCMAKE_BUILD_TYPE=Debug
+      - cmake --build {{.BUILD_DIR}}-debug --parallel {{.CORES}}
       - cd {{.BUILD_DIR}}-debug && gdb ./{{.TARGET}}
 
   release:
-    desc: "Build optimized release version"
-    env:
-      VCPKG_FEATURE_FLAGS: manifests
+    desc: Build optimized release version
     cmds:
-      - vcpkg integrate install
-      - cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" .
-      - cmake --build {{.BUILD_DIR}}-release --config Release --parallel {{.CORES | default "4"}}
+      - cmake -B {{.BUILD_DIR}}-release -S . -DCMAKE_BUILD_TYPE=Release
+      - cmake --build {{.BUILD_DIR}}-release --parallel {{.CORES}}
 
   run-release:
-    desc: "Build and run optimized release version"
+    desc: Build and run optimized release version
+    deps: [release]
     cmds:
-      - task: release
       - cp *.glsl {{.BUILD_DIR}}-release/
-      - cd {{.BUILD_DIR}}-release && ./{{.TARGET}}
+      - ./{{.BUILD_DIR}}-release/{{.TARGET}}

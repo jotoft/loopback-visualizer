@@ -4,7 +4,7 @@
 #include <audio_filters/filters.h>
 #include <chrono>
 #include <thread>
-#include <glad/glad.h>
+#include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <sstream>
@@ -13,6 +13,8 @@
 #include <assert.h>
 #include <limits>
 #include <complex>
+#include "core/result.h"
+#include "core/option.h"
 // TODO: Implement custom FFT here
 const uint32_t width = 2400;
 
@@ -101,34 +103,52 @@ bool audio_callback(const audio::AudioBuffer &buffer)
   return capturing;
 }
 
-std::string load_file(const std::string &filename)
-{
-  std::stringstream ss;
-  std::ifstream test(filename, std::ios::binary);
-  ss << test.rdbuf();
-  return ss.str();
+auto load_file(const std::string &filename) -> core::Result<std::string, std::string> {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        return core::Result<std::string, std::string>::Err("Failed to open file: " + filename);
+    }
+    
+    std::stringstream ss;
+    ss << file.rdbuf();
+    
+    if (file.bad()) {
+        return core::Result<std::string, std::string>::Err("Error reading file: " + filename);
+    }
+    
+    return core::Result<std::string, std::string>::Ok(ss.str());
 }
 
-void check_shader_compilation(uint32_t shader)
-{
-  int success;
-  char infoLog[512];
-  glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    glGetShaderInfoLog(shader, 512, NULL, infoLog);
-    std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-  }
+struct Unit {}; // Unit type for void-like results
+
+auto check_shader_compilation(uint32_t shader) -> core::Result<Unit, std::string> {
+    int success;
+    char infoLog[512];
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    
+    if (!success) {
+        glGetShaderInfoLog(shader, 512, NULL, infoLog);
+        return core::Result<Unit, std::string>::Err(
+            "Shader compilation failed: " + std::string(infoLog)
+        );
+    }
+    
+    return core::Result<Unit, std::string>::Ok(Unit{});
 }
 
-void check_shader_link(uint32_t shader)
-{
-  int success;
-  char infoLog[512];
-  glGetShaderiv(shader, GL_LINK_STATUS, &success);
-  if (!success) {
-    glGetProgramInfoLog(shader, 512, NULL, infoLog);
-    std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-  }
+auto check_shader_link(uint32_t shader) -> core::Result<Unit, std::string> {
+    int success;
+    char infoLog[512];
+    glGetProgramiv(shader, GL_LINK_STATUS, &success);
+    
+    if (!success) {
+        glGetProgramInfoLog(shader, 512, NULL, infoLog);
+        return core::Result<Unit, std::string>::Err(
+            "Shader linking failed: " + std::string(infoLog)
+        );
+    }
+    
+    return core::Result<Unit, std::string>::Ok(Unit{});
 }
 
 /// Find Samples is used to keep the phase of the drawn waveform the same, if possible.
@@ -170,8 +190,21 @@ int main()
 
   audio::capture_data(&audio_callback, default_sink);
 
-  std::string soundwave_shader_text = load_file("soundwave.glsl");
-  std::string basic_vertex_text = load_file("basic_vertex.glsl");
+  auto soundwave_result = load_file("soundwave.glsl");
+  auto vertex_result = load_file("basic_vertex.glsl");
+
+  if (soundwave_result.is_err()) {
+    std::cerr << "Failed to load soundwave shader: " << soundwave_result.error() << std::endl;
+    return -1;
+  }
+
+  if (vertex_result.is_err()) {
+    std::cerr << "Failed to load vertex shader: " << vertex_result.error() << std::endl;
+    return -1;
+  }
+
+  auto soundwave_shader_text = std::move(soundwave_result).unwrap();
+  auto basic_vertex_text = std::move(vertex_result).unwrap();
 
   GLFWwindow *window;
 
@@ -189,7 +222,7 @@ int main()
 
   /* Make the window's context current */
   glfwMakeContextCurrent(window);
-  gladLoadGL();
+  gladLoadGL(glfwGetProcAddress);
 
   unsigned int VBO;
   glGenBuffers(1, &VBO);
@@ -216,14 +249,20 @@ int main()
   glShaderSource(vertexShader, 1, &test, NULL);
   glCompileShader(vertexShader);
 
-  check_shader_compilation(vertexShader);
+  if (auto result = check_shader_compilation(vertexShader); result.is_err()) {
+    std::cerr << "Vertex shader compilation failed: " << result.error() << std::endl;
+    return -1;
+  }
   unsigned int fragmentShader;
   fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
   auto source2 = soundwave_shader_text.c_str();
   glShaderSource(fragmentShader, 1, &source2, NULL);
   glCompileShader(fragmentShader);
 
-  check_shader_compilation(fragmentShader);
+  if (auto result = check_shader_compilation(fragmentShader); result.is_err()) {
+    std::cerr << "Fragment shader compilation failed: " << result.error() << std::endl;
+    return -1;
+  }
 
   unsigned int shaderProgram;
 
@@ -232,7 +271,10 @@ int main()
   glAttachShader(shaderProgram, fragmentShader);
   glLinkProgram(shaderProgram);
 
-  check_shader_link(shaderProgram);
+  if (auto result = check_shader_link(shaderProgram); result.is_err()) {
+    std::cerr << "Shader linking failed: " << result.error() << std::endl;
+    return -1;
+  }
 
   glUseProgram(shaderProgram);
 

@@ -8,10 +8,17 @@ if(WIN32)
     add_compile_options("/fp:fast")
 endif()
 
-# Find packages installed via vcpkg
-find_package(glad CONFIG REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
-find_package(Catch2 3 CONFIG REQUIRED)
+# Use vendored dependencies
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/glfw)
+
+add_subdirectory(3rdparty/glad_gen)
+
+set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/Catch2)
 add_subdirectory(audio_loopback)
 add_subdirectory(audio_filters)
 add_subdirectory(tests)

@@ -15,20 +15,20 @@ Real-time audio oscilloscope that captures system audio output and visualizes it
 - **Main Loop**: `main.cpp` - Coordinates audio capture, processing, and rendering
 
 ## Build System
-**vcpkg Package Manager**: Uses vcpkg manifest mode for dependency management with automatic installation during CMake configure.
+**CMake with vendored dependencies**: All dependencies are included in `3rdparty/` for predictable builds.
 
 ### Prerequisites
-- vcpkg installed with `VCPKG_ROOT` environment variable set
-- Enable manifest mode: `export VCPKG_FEATURE_FLAGS=manifests`
+- CMake 3.13 or higher
+- C++23 compatible compiler
 
 ### Build Commands
 ```bash
 # Debug build (from project root)
-VCPKG_FEATURE_FLAGS=manifests cmake -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake -B build .
 cmake --build build
 
 # Release build  
-VCPKG_FEATURE_FLAGS=manifests cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
+cmake -B build-release -DCMAKE_BUILD_TYPE=Release .
 cmake --build build-release --config Release
 
 # Using Task runner (recommended)
@@ -37,10 +37,10 @@ task run     # Build and run debug visualizer
 task release # Build release version
 ```
 
-### Dependencies (vcpkg.json)
-- **GLAD**: OpenGL function loader (`glad::glad`)
-- **GLFW**: Cross-platform windowing (`glfw`)  
-- **Catch2**: Testing framework (`Catch2::Catch2WithMain`)
+### Vendored Dependencies (3rdparty/)
+- **GLAD**: OpenGL function loader
+- **GLFW**: Cross-platform windowing  
+- **Catch2**: Testing framework
 
 ## Key Files
 - `main.cpp` - Main application with OpenGL setup and audio callback
@@ -49,7 +49,6 @@ task release # Build release version
 - `audio_filters/` - Signal processing utilities
 - `core/result.h` - Monadic Result<T,E> type for error handling
 - `core/option.h` - Monadic Option<T> type for nullable values
-- `vcpkg.json` - Package manifest for dependency management
 - `Taskfile.yml` - Task runner configuration for cross-platform builds
 
 ## Coding Guidelines

@@ -1,4 +1,4 @@
-# Use Catch2 from vcpkg
+# Use vendored Catch2
 add_executable(tests 
     test_main.cpp
     # test_fft.cpp  # Disabled for now
@@ -7,3 +7,7 @@ add_executable(tests
 
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 target_include_directories(tests PRIVATE ../core)
+
+# Register tests with CTest
+enable_testing()
+add_test(NAME core_tests COMMAND tests)

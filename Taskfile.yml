@@ -15,7 +15,7 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}
       - |
         if [ "{{OS}}" = "windows" ]; then
-          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" ..
+          cd {{.BUILD_DIR}} && cmake -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" ..
         else
           cd {{.BUILD_DIR}} && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
         fi
@@ -76,7 +76,7 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}-debug
       - |
         if [ "{{OS}}" = "windows" ]; then
-          cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" ..
+          cd {{.BUILD_DIR}}-debug && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" ..
         else
           cd {{.BUILD_DIR}}-debug && VCPKG_FEATURE_FLAGS=manifests cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" ..
         fi
@@ -88,7 +88,7 @@ tasks:
     cmds:
       - |
         if [ "{{OS}}" = "windows" ]; then
-          cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" .
+          cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" .
         else
           VCPKG_FEATURE_FLAGS=manifests cmake -B {{.BUILD_DIR}}-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" .
         fi

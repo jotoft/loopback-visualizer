@@ -30,3 +30,13 @@ add_executable(visualizer main.cpp)
 add_executable(glfwmaintest glfwmain.cpp)
 target_link_libraries(glfwmaintest glfw glad::glad)
 target_link_libraries(visualizer audio_loopback audio_filters glfw glad::glad core)
+
+# Copy shader files to build directory whenever they change
+add_custom_command(
+    TARGET visualizer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/soundwave.glsl
+        ${CMAKE_SOURCE_DIR}/basic_vertex.glsl
+        $<TARGET_FILE_DIR:visualizer>
+    COMMENT "Copying shader files to build directory"
+)

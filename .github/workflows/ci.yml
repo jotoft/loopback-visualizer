@@ -28,6 +28,9 @@ jobs:
           libxinerama-dev \
           libxcursor-dev \
           libxi-dev \
+          libwayland-dev \
+          wayland-protocols \
+          libxkbcommon-dev \
           xvfb
           
     - name: Install Task

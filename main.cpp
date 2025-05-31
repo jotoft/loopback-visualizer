@@ -12,18 +12,8 @@
 #include <algorithm>
 #include <assert.h>
 #include <limits>
-#include <metaFFT/radix2.h>
-#include <metaFFT/radix2_complex.h>
 #include <complex>
-void test_fft(std::vector<std::complex<float>> data) {
-  using namespace metaFFT::radix2::std_complex;
-  using namespace metaFFT::radix2::std_complex::unrolled_loop;  const int N = 512;
-  using metaFFT::radix2::in_place::fft;
-  typedef float float_type;
-
-  auto transform = fft<N, std::complex<float_type>, bit_reverse_policy, butterfly_policy>();
-  transform.forward(data.data());
-}
+// TODO: Implement custom FFT here
 const uint32_t width = 2400;
 
 std::mutex mtx;

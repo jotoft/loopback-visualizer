@@ -2,7 +2,6 @@
 #include <audio_loopback/loopback_recorder.h>
 #include <audio_loopback/ostream_operators.h>
 #include <audio_loopback/audio_capture.h>
-#include <audio_filters/filters.h>
 #include <chrono>
 #include <thread>
 #include <glad/gl.h>
@@ -10,16 +9,13 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include <assert.h>
-#include <limits>
-#include <complex>
 #include <cstring>
 #include <iomanip>
 #include <vector>
-#include <deque>
 #include "core/result.h"
 #include "core/option.h"
 #include "core/unit.h"
+#include "visualization/phase_lock_analyzer.h"
 
 // ImGui includes
 #include "imgui.h"
@@ -28,39 +24,25 @@
 
 const uint32_t width = 2400;
 
-class Initializer
-{
+class Initializer {
 public:
-    Initializer()
-    {
-      std::ios_base::sync_with_stdio(false);
-    }
+    Initializer() { std::ios_base::sync_with_stdio(false); }
 };
 
 struct vec4 {
-    float x;
-    float y; 
-    float z;
-    float w;
+    float x, y, z, w;
 };
 
-// Much smaller display buffer - we only need what's visible
+// Display buffer
 const uint32_t DISPLAY_SAMPLES = width;
 static vec4 display_buffer[DISPLAY_SAMPLES];
-
-// Pre-allocated buffers to avoid allocations in render loop
-static float audio_read_buffer[1024];  // Big enough for burst reads
+static float audio_read_buffer[1024];
 
 // GUI state
 struct GuiState {
-    bool phase_lock_enabled = false;
-    float phase_smoothing = 0.9f;
-    float correlation_threshold = 0.7f;
-    int correlation_window_size = 512;
+    bool phase_lock_enabled = true;  // Enable by default
     bool show_demo_window = false;
     bool show_correlation_graph = true;
-    std::deque<float> correlation_history;
-    const size_t max_history = 240;  // 1 second at 240 FPS
     
     // Visual settings
     ImVec4 waveform_color = ImVec4(0.0f, 1.0f, 0.9f, 1.0f);
@@ -70,6 +52,14 @@ struct GuiState {
 };
 
 static GuiState gui_state;
+
+// App state for callbacks
+struct AppState {
+    bool capture_input = false;
+    std::unique_ptr<audio::AudioCapture>* audio_capture_ptr = nullptr;
+    std::vector<audio::AudioSinkInfo> available_devices;
+    audio::AudioSinkInfo current_device;
+};
 
 auto load_file(const std::string &filename) -> core::Result<std::string, std::string> {
     std::ifstream file(filename, std::ios::binary);
@@ -117,20 +107,11 @@ auto check_shader_link(uint32_t shader) -> core::Result<core::Unit, std::string>
     return core::Result<core::Unit, std::string>::Ok(core::unit);
 }
 
-// App state for passing to callbacks
-struct AppState {
-    bool capture_input = false;  // false = loopback, true = input
-    std::unique_ptr<audio::AudioCapture>* audio_capture_ptr = nullptr;
-    std::vector<audio::AudioSinkInfo> available_devices;
-    audio::AudioSinkInfo current_device;
-};
-
-int main()
-{
+int main() {
     Initializer _init;
     AppState app_state;
     
-    // Audio capture pointer (we'll recreate when switching sources)
+    // Audio capture pointer
     std::unique_ptr<audio::AudioCapture> audio_capture;
     app_state.audio_capture_ptr = &audio_capture;
     
@@ -148,7 +129,6 @@ int main()
     
     // Function to switch audio source
     auto switch_audio_source = [&app_state, &audio_capture](const audio::AudioSinkInfo* device = nullptr) {
-        // Stop current capture if running
         if (audio_capture) {
             audio_capture->stop();
             audio_capture.reset();
@@ -157,27 +137,21 @@ int main()
         audio::AudioSinkInfo selected_device;
         
         if (device) {
-            // Use specified device
             selected_device = *device;
             app_state.current_device = selected_device;
         } else {
-            // Toggle between input and loopback
             app_state.capture_input = !app_state.capture_input;
-            
-            // Get appropriate audio device
             auto device_opt = audio::get_default_sink(app_state.capture_input);
             if (device_opt.is_none()) {
                 std::cerr << "No default " << (app_state.capture_input ? "input" : "sink") << " found" << std::endl;
                 return false;
             }
-            
             selected_device = device_opt.unwrap();
             app_state.current_device = selected_device;
         }
         
         std::cout << "\nSwitching to: " << selected_device.name << std::endl;
         
-        // Create new capture
         audio_capture = audio::create_audio_capture(selected_device);
         auto result = audio_capture->start();
         if (result.is_err()) {
@@ -192,10 +166,11 @@ int main()
     if (!switch_audio_source()) {
         return -1;
     }
-    app_state.capture_input = false;  // Reset since switch_audio_source toggled it
+    app_state.capture_input = false;
 
-    auto soundwave_result = load_file("soundwave_optimized.glsl");
-    auto vertex_result = load_file("basic_vertex.glsl");
+    // Load shaders
+    auto soundwave_result = load_file("shaders/soundwave_optimized.glsl");
+    auto vertex_result = load_file("shaders/basic_vertex.glsl");
 
     if (soundwave_result.is_err()) {
         std::cerr << "Failed to load soundwave shader: " << soundwave_result.error() << std::endl;
@@ -210,22 +185,16 @@ int main()
     auto soundwave_shader_text = std::move(soundwave_result).unwrap();
     auto basic_vertex_text = std::move(vertex_result).unwrap();
 
-    GLFWwindow *window;
+    // Initialize GLFW
+    if (!glfwInit()) return -1;
 
-    /* Initialize the library */
-    if (!glfwInit())
-        return -1;
-
-    // GL 3.3 + GLSL 330
     const char* glsl_version = "#version 330";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(width, 900, "Audio Visualizer with GUI", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(width, 900, "Audio Visualizer", NULL, NULL);
     
-    // Get actual framebuffer size (for high DPI displays)
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
     
@@ -238,60 +207,47 @@ int main()
     std::cout << "DPI scale: " << dpi_scale << std::endl;
     
     if (!window) {
-        std::cout << "error 1";
         glfwTerminate();
         return -1;
     }
 
-    /* Make the window's context current */
     glfwMakeContextCurrent(window);
     gladLoadGL(glfwGetProcAddress);
     
-    // Setup Dear ImGui context
+    // Setup ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     
-    // IMPORTANT: Must init backends BEFORE loading fonts
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
     
     // Load font at higher resolution for HiDPI
     io.Fonts->Clear();
     ImFontConfig font_config;
-    font_config.OversampleH = 3;  // Horizontal oversampling
-    font_config.OversampleV = 3;  // Vertical oversampling
+    font_config.OversampleH = 3;
+    font_config.OversampleV = 3;
     font_config.PixelSnapH = true;
     
-    // Load at size appropriate for DPI
     float font_size = 13.0f * dpi_scale;
     io.Fonts->AddFontFromFileTTF("/usr/share/fonts/liberation/LiberationSans-Regular.ttf", font_size, &font_config);
     
-    // Fallback to default font if file not found
     if (io.Fonts->Fonts.Size == 0) {
         font_config.SizePixels = font_size;
         io.Fonts->AddFontDefault(&font_config);
     }
     
-    // Build font atlas
     io.Fonts->Build();
-    
-    // Don't scale the already-scaled font
     io.FontGlobalScale = 1.0f;
-    
-    // Scale UI elements
     ImGui::GetStyle().ScaleAllSizes(dpi_scale);
 
-    // Create vertex data for fullscreen quad
-    unsigned int VBO;
-    glGenBuffers(1, &VBO);
-    
-    unsigned int VAO;
+    // Create OpenGL resources
+    unsigned int VAO, VBO;
     glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     
@@ -304,11 +260,10 @@ int main()
          1.0f,  1.0f, 0.0f,
     };
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Shader setup
+    // Compile shaders
     uint32_t vertexShader = glCreateShader(GL_VERTEX_SHADER);
     auto vertex_src = basic_vertex_text.c_str();
     glShaderSource(vertexShader, 1, &vertex_src, NULL);
@@ -341,11 +296,13 @@ int main()
 
     glUseProgram(shaderProgram);
     
-    // Set resolution uniform
+    // Get uniform locations
     GLint resolution_loc = glGetUniformLocation(shaderProgram, "resolution");
-    glUniform2f(resolution_loc, (float)fb_width, (float)fb_height);
+    GLint sample_loc = glGetUniformLocation(shaderProgram, "current_sample");
+    GLint trigger_level_loc = glGetUniformLocation(shaderProgram, "trigger_level");
+    GLint phase_lock_enabled_loc = glGetUniformLocation(shaderProgram, "phase_lock_enabled");
 
-    // Create smaller UBO for just display samples
+    // Create UBO for samples
     unsigned int ubo;
     glGenBuffers(1, &ubo);
     glBindBuffer(GL_UNIFORM_BUFFER, ubo);
@@ -355,231 +312,80 @@ int main()
     GLuint binding_point_index = 2;
     glBindBufferBase(GL_UNIFORM_BUFFER, binding_point_index, ubo);
     glUniformBlockBinding(shaderProgram, block_index, binding_point_index);
-    
-    GLint sample_loc = glGetUniformLocation(shaderProgram, "current_sample");
-    GLint trigger_level_loc = glGetUniformLocation(shaderProgram, "trigger_level");
-    GLint phase_lock_enabled_loc = glGetUniformLocation(shaderProgram, "phase_lock_enabled");
 
-    // Timing
     glfwSwapInterval(0); // Disable VSync for minimum latency
     
-    // For FPS calculation
+    // Create phase lock analyzer
+    visualization::PhaseLockAnalyzer::Config analyzer_config;
+    analyzer_config.phase_smoothing = 0.0f;
+    analyzer_config.correlation_threshold = 0.45f;
+    analyzer_config.correlation_window_size = 300;
+    analyzer_config.display_samples = DISPLAY_SAMPLES;
+    
+    visualization::PhaseLockAnalyzer phase_analyzer(analyzer_config);
+    
+    // FPS calculation
     double last_fps_time = glfwGetTime();
     int fps_frame_count = 0;
     float current_fps = 0.0f;
-    
-    // Pre-allocate circular buffer for phase tracking
-    const size_t PHASE_BUFFER_SIZE = 4096;  // Larger for correlation
-    float phase_buffer[PHASE_BUFFER_SIZE] = {0}; // Initialize to zero
-    size_t phase_write_pos = 0;
-    
-    // Cross-correlation based phase locking
-    float* reference_window = nullptr;  // Will be dynamically allocated
-    bool has_reference = false;
-    size_t phase_offset = 0;  // Current phase offset
-    size_t target_phase_offset = 0;  // Target phase offset from correlation
-    float best_correlation = 0.0f;
-    int frames_since_reference = 0;
-    
-    // Initialize display buffer to zero to avoid garbage
-    std::memset(display_buffer, 0, sizeof(display_buffer));
-    
-    // Set viewport to match framebuffer
-    glViewport(0, 0, fb_width, fb_height);
-    
-    // Render loop with precise 240 FPS timing
-    using clock = std::chrono::high_resolution_clock;
-    using microseconds = std::chrono::microseconds;
-    
-    constexpr auto frame_time = microseconds(4167); // Exactly 1/240 seconds
-    auto next_frame = clock::now();
     
     // Audio stats
     size_t audio_buffer_size = 0;
     size_t overruns = 0;
     size_t underruns = 0;
     
+    // Initialize display buffer
+    std::memset(display_buffer, 0, sizeof(display_buffer));
+    glViewport(0, 0, fb_width, fb_height);
+    
+    // Main loop
+    using clock = std::chrono::high_resolution_clock;
+    using microseconds = std::chrono::microseconds;
+    constexpr auto frame_time = microseconds(4167); // 240 FPS
+    auto next_frame = clock::now();
+    
     while (!glfwWindowShouldClose(window)) {
-        // Poll for events
         glfwPollEvents();
         
-        // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         
-        // Update viewport if window resizes
+        // Update viewport
         glfwGetFramebufferSize(window, &fb_width, &fb_height);
         glViewport(0, 0, fb_width, fb_height);
         glUniform2f(resolution_loc, (float)fb_width, (float)fb_height);
         
-        // Read all available audio samples to prevent buffer buildup
+        // Read audio samples
         size_t available = audio_capture->available_samples();
-        audio_buffer_size = available;  // For GUI display
-        if (available > 512) available = 512;  // Limit per frame
+        audio_buffer_size = available;
+        if (available > 512) available = 512;
         size_t samples_read = audio_capture->read_samples(audio_read_buffer, available);
         
         if (samples_read > 0) {
-            // Add samples directly to phase buffer
-            for (size_t i = 0; i < samples_read; ++i) {
-                phase_buffer[phase_write_pos] = audio_read_buffer[i];
-                phase_write_pos = (phase_write_pos + 1) % PHASE_BUFFER_SIZE;
-            }
+            phase_analyzer.add_samples(audio_read_buffer, samples_read);
         }
         
-        // Reallocate reference window if size changed
-        static int last_window_size = 0;
-        if (gui_state.correlation_window_size != last_window_size) {
-            delete[] reference_window;
-            reference_window = new float[gui_state.correlation_window_size];
-            last_window_size = gui_state.correlation_window_size;
-            has_reference = false;
-        }
+        // Update analyzer config if changed
+        auto& config = phase_analyzer.get_config();
+        bool config_changed = false;
         
-        // Determine read position based on phase lock mode
-        size_t read_pos;
+        // Analyze phase
+        auto state = phase_analyzer.analyze(gui_state.phase_lock_enabled);
         
-        if (gui_state.phase_lock_enabled) {
-            // Cross-correlation based phase locking
-            
-            // Update reference window periodically or when we don't have one
-            if (!has_reference || frames_since_reference > 120) {  // Update every ~0.5 seconds at 240fps
-                // Copy current window as reference
-                size_t ref_start = (phase_write_pos + PHASE_BUFFER_SIZE - gui_state.correlation_window_size) % PHASE_BUFFER_SIZE;
-                for (int i = 0; i < gui_state.correlation_window_size; ++i) {
-                    reference_window[i] = phase_buffer[(ref_start + i) % PHASE_BUFFER_SIZE];
-                }
-                has_reference = true;
-                frames_since_reference = 0;
-            }
-            frames_since_reference++;
-            
-            // Find best correlation offset
-            float max_correlation = -1.0f;
-            size_t best_offset = 0;
-            
-            // Search range: look back up to DISPLAY_SAMPLES + correlation window
-            const size_t SEARCH_RANGE = 1024;  // How far back to search
-            size_t search_start = (phase_write_pos + PHASE_BUFFER_SIZE - DISPLAY_SAMPLES - SEARCH_RANGE) % PHASE_BUFFER_SIZE;
-            
-            // Compute correlation at different offsets
-            for (size_t offset = 0; offset < SEARCH_RANGE; offset += 4) {  // Skip 4 for speed
-                float correlation = 0.0f;
-                float ref_energy = 0.0f;
-                float sig_energy = 0.0f;
-                
-                // Compute normalized cross-correlation
-                for (int i = 0; i < gui_state.correlation_window_size; ++i) {
-                    size_t idx = (search_start + offset + i) % PHASE_BUFFER_SIZE;
-                    float sig_val = phase_buffer[idx];
-                    float ref_val = reference_window[i];
-                    
-                    correlation += sig_val * ref_val;
-                    sig_energy += sig_val * sig_val;
-                    ref_energy += ref_val * ref_val;
-                }
-                
-                // Normalize correlation
-                if (sig_energy > 0.0f && ref_energy > 0.0f) {
-                    correlation /= sqrtf(sig_energy * ref_energy);
-                    
-                    if (correlation > max_correlation) {
-                        max_correlation = correlation;
-                        best_offset = offset;
-                    }
-                }
-            }
-            
-            // Fine-tune around best offset
-            if (best_offset > 2 && best_offset < SEARCH_RANGE - 2) {
-                for (int fine_offset = -2; fine_offset <= 2; ++fine_offset) {
-                    size_t offset = best_offset + fine_offset;
-                    float correlation = 0.0f;
-                    float ref_energy = 0.0f;
-                    float sig_energy = 0.0f;
-                    
-                    for (int i = 0; i < gui_state.correlation_window_size; ++i) {
-                        size_t idx = (search_start + offset + i) % PHASE_BUFFER_SIZE;
-                        float sig_val = phase_buffer[idx];
-                        float ref_val = reference_window[i];
-                        
-                        correlation += sig_val * ref_val;
-                        sig_energy += sig_val * sig_val;
-                        ref_energy += ref_val * ref_val;
-                    }
-                    
-                    if (sig_energy > 0.0f && ref_energy > 0.0f) {
-                        correlation /= sqrtf(sig_energy * ref_energy);
-                        
-                        if (correlation > max_correlation) {
-                            max_correlation = correlation;
-                            best_offset = offset;
-                        }
-                    }
-                }
-            }
-            
-            best_correlation = max_correlation;
-            
-            // Update correlation history
-            gui_state.correlation_history.push_back(best_correlation);
-            if (gui_state.correlation_history.size() > gui_state.max_history) {
-                gui_state.correlation_history.pop_front();
-            }
-            
-            // Update target phase offset based on correlation
-            if (max_correlation > gui_state.correlation_threshold) {
-                target_phase_offset = (search_start + best_offset) % PHASE_BUFFER_SIZE;
-            } else {
-                // Fallback target to recent data if correlation is poor
-                target_phase_offset = (phase_write_pos + PHASE_BUFFER_SIZE - DISPLAY_SAMPLES) % PHASE_BUFFER_SIZE;
-            }
-            
-            // Smoothly interpolate to the target phase offset
-            if (phase_offset == 0) {
-                // First time - jump directly to target
-                phase_offset = target_phase_offset;
-            } else {
-                // Calculate phase difference (handling wraparound)
-                int phase_diff = (int)target_phase_offset - (int)phase_offset;
-                
-                // Handle wraparound
-                if (phase_diff > (int)(PHASE_BUFFER_SIZE / 2)) {
-                    phase_diff -= PHASE_BUFFER_SIZE;
-                } else if (phase_diff < -(int)(PHASE_BUFFER_SIZE / 2)) {
-                    phase_diff += PHASE_BUFFER_SIZE;
-                }
-                
-                // Apply smoothing
-                float smooth_diff = phase_diff * (1.0f - gui_state.phase_smoothing);
-                phase_offset = (phase_offset + (int)smooth_diff + PHASE_BUFFER_SIZE) % PHASE_BUFFER_SIZE;
-            }
-            
-            read_pos = phase_offset;
-        } else {
-            // No phase lock - absolute minimum latency
-            read_pos = (phase_write_pos + PHASE_BUFFER_SIZE - DISPLAY_SAMPLES) % PHASE_BUFFER_SIZE;
-            has_reference = false;  // Reset reference when disabled
-            phase_offset = 0;  // Reset phase offset
-            gui_state.correlation_history.clear();  // Clear history when disabled
-        }
-        
-        // Fill display buffer
-        float max_sample = 0;
-        float min_sample = 0;
+        // Fill display buffer from phase buffer
+        const float* phase_buffer = phase_analyzer.get_phase_buffer();
+        size_t read_pos = state.read_position;
         
         for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-            float sample = phase_buffer[read_pos];
-            display_buffer[i].x = sample;
+            display_buffer[i].x = phase_buffer[read_pos];
             display_buffer[i].y = 0.0f;
             display_buffer[i].z = 0.0f;
             display_buffer[i].w = 0.0f;
-            max_sample = std::max(max_sample, sample);
-            min_sample = std::min(min_sample, sample);
-            read_pos = (read_pos + 1) % PHASE_BUFFER_SIZE;
+            read_pos = (read_pos + 1) % phase_analyzer.get_phase_buffer_size();
         }
         
-        // Upload only what we need to GPU
+        // Upload to GPU
         glBindBuffer(GL_UNIFORM_BUFFER, ubo);
         void* ptr = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(display_buffer),
                                      GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
@@ -590,21 +396,18 @@ int main()
         
         // Set uniforms
         glUniform1i(sample_loc, 0);
-        glUniform1f(trigger_level_loc, best_correlation);  // Show correlation as "trigger level"
+        glUniform1f(trigger_level_loc, state.best_correlation);
         glUniform1i(phase_lock_enabled_loc, gui_state.phase_lock_enabled ? 1 : 0);
         
-        // Clear to dark background
+        // Clear and draw
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        
-        // Draw fullscreen triangle (actually 2 triangles)
         glDrawArrays(GL_TRIANGLES, 0, 6);
         
         // ImGui rendering
         {
-            // Control panel window
             ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(350, 500), ImGuiCond_FirstUseEver);
             
             ImGui::Begin("Audio Visualizer Controls");
             
@@ -619,16 +422,23 @@ int main()
                 ImGui::Checkbox("Enable Phase Lock", &gui_state.phase_lock_enabled);
                 
                 if (gui_state.phase_lock_enabled) {
-                    ImGui::Text("Correlation: %.2f", best_correlation);
-                    ImGui::Text("Lock Status: %s", 
-                        best_correlation > gui_state.correlation_threshold ? "LOCKED" : "SEARCHING");
+                    ImGui::Text("Correlation: %.2f", state.best_correlation);
+                    ImGui::Text("Lock Status: %s", state.has_lock ? "LOCKED" : "SEARCHING");
                     
-                    ImGui::SliderFloat("Phase Smoothing", &gui_state.phase_smoothing, 0.0f, 0.99f);
-                    ImGui::SliderFloat("Correlation Threshold", &gui_state.correlation_threshold, 0.3f, 0.95f);
-                    ImGui::SliderInt("Correlation Window", &gui_state.correlation_window_size, 128, 1024);
+                    auto config = phase_analyzer.get_config();
+                    
+                    if (ImGui::SliderFloat("Phase Smoothing", &config.phase_smoothing, 0.0f, 0.99f)) {
+                        phase_analyzer.set_config(config);
+                    }
+                    if (ImGui::SliderFloat("Correlation Threshold", &config.correlation_threshold, 0.3f, 0.95f)) {
+                        phase_analyzer.set_config(config);
+                    }
+                    if (ImGui::SliderInt("Correlation Window", &config.correlation_window_size, 128, 1024)) {
+                        phase_analyzer.set_config(config);
+                    }
                     
                     if (ImGui::Button("Reset Reference")) {
-                        has_reference = false;
+                        phase_analyzer.reset();
                     }
                 }
             }
@@ -643,11 +453,7 @@ int main()
                     bool is_selected = (device.device_id == app_state.current_device.device_id);
                     
                     std::string label = device.name;
-                    if (device.capture_device) {
-                        label += " [INPUT]";
-                    } else {
-                        label += " [OUTPUT]";
-                    }
+                    label += device.capture_device ? " [INPUT]" : " [OUTPUT]";
                     
                     if (ImGui::Selectable(label.c_str(), is_selected)) {
                         switch_audio_source(&device);
@@ -659,8 +465,6 @@ int main()
                     auto devices_result = audio::list_sinks();
                     if (devices_result.is_ok()) {
                         app_state.available_devices = devices_result.unwrap();
-                        
-                        // Add default input device
                         auto input_device = audio::get_default_sink(true);
                         if (input_device.is_some()) {
                             app_state.available_devices.push_back(input_device.unwrap());
@@ -683,16 +487,16 @@ int main()
             
             ImGui::End();
             
-            // Correlation graph window
+            // Correlation graph
             if (gui_state.show_correlation_graph && gui_state.phase_lock_enabled) {
                 ImGui::SetNextWindowPos(ImVec2(370, 10), ImGuiCond_FirstUseEver);
                 ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
                 
                 ImGui::Begin("Correlation History");
                 
-                if (!gui_state.correlation_history.empty()) {
-                    std::vector<float> values(gui_state.correlation_history.begin(), 
-                                              gui_state.correlation_history.end());
+                const auto& history = phase_analyzer.get_correlation_history();
+                if (!history.empty()) {
+                    std::vector<float> values(history.begin(), history.end());
                     ImGui::PlotLines("Correlation", values.data(), values.size(), 
                                      0, nullptr, 0.0f, 1.0f, ImVec2(0, 150));
                 }
@@ -700,38 +504,31 @@ int main()
                 ImGui::End();
             }
             
-            // Show demo window
             if (gui_state.show_demo_window) {
                 ImGui::ShowDemoWindow(&gui_state.show_demo_window);
             }
         }
         
-        // Rendering
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         
-        // Swap buffers
         glfwSwapBuffers(window);
         
-        // Precise frame timing for exactly 240 FPS
+        // Frame timing
         next_frame += frame_time;
-        
-        // Sleep until it's time for the next frame
         auto now = clock::now();
         if (next_frame > now) {
-            // Use sleep_until for more precise timing
             std::this_thread::sleep_until(next_frame);
         } else {
-            // We're behind schedule, reset timing
             next_frame = now;
         }
         
-        // Calculate and print FPS + stats
+        // FPS calculation
         fps_frame_count++;
         double current_time = glfwGetTime();
         double fps_delta = current_time - last_fps_time;
         
-        if (fps_delta >= 0.5) {  // Update every 0.5 seconds
+        if (fps_delta >= 0.5) {
             current_fps = fps_frame_count / fps_delta;
             auto stats = audio_capture->get_stats();
             overruns = stats.overruns;
@@ -743,8 +540,6 @@ int main()
     }
 
     // Cleanup
-    delete[] reference_window;
-    
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

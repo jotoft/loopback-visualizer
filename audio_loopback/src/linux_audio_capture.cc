@@ -19,10 +19,11 @@ class LinuxAudioCapture : public AudioCaptureBase {
 private:
     std::thread capture_thread_;
     pa_simple* pulse_handle_ = nullptr;
+    AudioSinkInfo sink_info_;
     
 public:
     LinuxAudioCapture(const AudioSinkInfo& sink, Config config) 
-        : AudioCaptureBase(std::move(config)) {
+        : AudioCaptureBase(std::move(config)), sink_info_(sink) {
         // Note: We don't initialize PulseAudio here to avoid blocking the constructor
     }
     
@@ -56,7 +57,18 @@ public:
 private:
     void capture_loop() {
         // Initialize PulseAudio in the audio thread
-        const char* monitor_device = "@DEFAULT_MONITOR@";
+        // Use monitor device for loopback, or null for default input
+        const char* device = nullptr;
+        if (!sink_info_.capture_device) {
+            // For loopback (output device), use the monitor
+            device = "@DEFAULT_MONITOR@";
+        }
+        // If device is nullptr, PulseAudio will use the default input device
+        
+        std::cout << "PulseAudio: Using device: " 
+                  << (device ? device : "default input") 
+                  << " (capture_device=" << sink_info_.capture_device << ")" << std::endl;
+        
         int error = 0;
         
         // Configure ultra low-latency buffer attributes
@@ -71,7 +83,7 @@ private:
             NULL,               // Use default server
             "Visualizer",       // Application name
             PA_STREAM_RECORD,
-            monitor_device,     // Use monitor device for loopback
+            device,             // Device (monitor for loopback, null for input)
             "Audio Loopback",   // Stream description
             &SAMPLE_SPEC,
             NULL,               // Use default channel map

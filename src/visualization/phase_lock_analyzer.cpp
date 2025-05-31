@@ -1,8 +1,10 @@
 #include "phase_lock_analyzer.h"
+#include "frequency_filter.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 
 namespace visualization {
 
@@ -10,11 +12,17 @@ PhaseLockAnalyzer::PhaseLockAnalyzer(const Config& config)
     : config_(config) {
     phase_buffer_ = new float[config_.phase_buffer_size]();
     reference_window_ = new float[config_.correlation_window_size];
+    
+    if (config_.use_frequency_filter) {
+        filtered_buffer_size_ = config_.phase_buffer_size;
+        filtered_buffer_ = new float[filtered_buffer_size_]();
+    }
 }
 
 PhaseLockAnalyzer::~PhaseLockAnalyzer() {
     delete[] phase_buffer_;
     delete[] reference_window_;
+    delete[] filtered_buffer_;
 }
 
 void PhaseLockAnalyzer::add_samples(const float* samples, size_t count) {
@@ -39,8 +47,13 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
         return state;
     }
     
+    // Apply frequency filter if enabled
+    if (config_.use_frequency_filter) {
+        apply_frequency_filter();
+    }
+    
     // Update reference window periodically
-    if (!has_reference_ || frames_since_reference_ > 120) {  // ~0.5 seconds at 240fps
+    if (!has_reference_ || frames_since_reference_ > 10) {  // ~0.5 seconds at 240fps
         update_reference_window();
     }
     frames_since_reference_++;
@@ -141,6 +154,16 @@ void PhaseLockAnalyzer::set_config(const Config& config) {
         has_reference_ = false;
     }
     
+    // Handle filtered buffer allocation
+    if (config.use_frequency_filter && !filtered_buffer_) {
+        filtered_buffer_size_ = config.phase_buffer_size;
+        filtered_buffer_ = new float[filtered_buffer_size_]();
+    } else if (!config.use_frequency_filter && filtered_buffer_) {
+        delete[] filtered_buffer_;
+        filtered_buffer_ = nullptr;
+        filtered_buffer_size_ = 0;
+    }
+    
     config_ = config;
 }
 
@@ -149,9 +172,12 @@ float PhaseLockAnalyzer::compute_correlation(size_t offset, size_t search_start)
     float ref_energy = 0.0f;
     float sig_energy = 0.0f;
     
+    // Use filtered buffer if frequency filtering is enabled
+    const float* buffer_to_use = config_.use_frequency_filter ? filtered_buffer_ : phase_buffer_;
+    
     for (int i = 0; i < config_.correlation_window_size; ++i) {
         size_t idx = (search_start + offset + i) % config_.phase_buffer_size;
-        float sig_val = phase_buffer_[idx];
+        float sig_val = buffer_to_use[idx];
         float ref_val = reference_window_[i];
         
         correlation += sig_val * ref_val;
@@ -173,12 +199,47 @@ void PhaseLockAnalyzer::update_reference_window() {
     size_t ref_start = (phase_write_pos_ + config_.phase_buffer_size - 
                        config_.correlation_window_size) % config_.phase_buffer_size;
     
+    // Use filtered buffer if frequency filtering is enabled
+    const float* buffer_to_use = config_.use_frequency_filter ? filtered_buffer_ : phase_buffer_;
+    
     for (int i = 0; i < config_.correlation_window_size; ++i) {
-        reference_window_[i] = phase_buffer_[(ref_start + i) % config_.phase_buffer_size];
+        reference_window_[i] = buffer_to_use[(ref_start + i) % config_.phase_buffer_size];
     }
     
     has_reference_ = true;
     frames_since_reference_ = 0;
+}
+
+void PhaseLockAnalyzer::apply_frequency_filter() {
+    if (!filtered_buffer_) return;
+    
+    // Create frequency filter with current config
+    FrequencyFilter::Config filter_config;
+    filter_config.fft_size = 2048;  // Use fixed size for now
+    filter_config.sample_rate = 44100.0f;
+    filter_config.low_frequency = config_.filter_low_frequency;
+    filter_config.high_frequency = config_.filter_high_frequency;
+    filter_config.use_smooth_window = true;
+    
+    static std::unique_ptr<FrequencyFilter> filter;
+    if (!filter || filter->get_config().low_frequency != config_.filter_low_frequency ||
+        filter->get_config().high_frequency != config_.filter_high_frequency) {
+        filter = std::make_unique<FrequencyFilter>(filter_config);
+    }
+    
+    // Extract recent samples from circular buffer
+    std::vector<float> samples(config_.phase_buffer_size);
+    size_t read_pos = phase_write_pos_;
+    for (size_t i = 0; i < config_.phase_buffer_size; ++i) {
+        samples[i] = phase_buffer_[read_pos];
+        read_pos = (read_pos + 1) % config_.phase_buffer_size;
+    }
+    
+    // Apply frequency filter
+    auto filtered = filter->filter_samples(samples.data(), samples.size());
+    
+    // Copy back to filtered buffer
+    std::memcpy(filtered_buffer_, filtered.data(), filtered.size() * sizeof(float));
 }
 
 } // namespace visualization

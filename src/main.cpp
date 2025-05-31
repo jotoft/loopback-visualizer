@@ -47,6 +47,7 @@ struct GuiState {
     bool show_reference_waveform = true;
     bool show_spectrum_analyzer = true;
     bool show_frequency_peaks = true;
+    bool show_filtered_waveform = true;
     
     // Visual settings
     ImVec4 waveform_color = ImVec4(0.0f, 1.0f, 0.9f, 1.0f);
@@ -452,6 +453,25 @@ int main() {
                         phase_analyzer.set_config(config);
                     }
                     
+                    ImGui::Separator();
+                    
+                    // Frequency filter settings
+                    if (ImGui::Checkbox("Use Frequency Filter", &config.use_frequency_filter)) {
+                        phase_analyzer.set_config(config);
+                    }
+                    
+                    if (config.use_frequency_filter) {
+                        if (ImGui::SliderFloat("Low Freq (Hz)", &config.filter_low_frequency, 20.0f, 2000.0f)) {
+                            phase_analyzer.set_config(config);
+                        }
+                        if (ImGui::SliderFloat("High Freq (Hz)", &config.filter_high_frequency, 
+                                              config.filter_low_frequency + 50.0f, 10000.0f)) {
+                            phase_analyzer.set_config(config);
+                        }
+                        
+                        ImGui::Text("Band: %.0f - %.0f Hz", config.filter_low_frequency, config.filter_high_frequency);
+                    }
+                    
                     if (ImGui::Button("Reset Reference")) {
                         phase_analyzer.reset();
                     }
@@ -502,6 +522,7 @@ int main() {
             ImGui::Checkbox("Show Reference Waveform", &gui_state.show_reference_waveform);
             ImGui::Checkbox("Show Spectrum Analyzer", &gui_state.show_spectrum_analyzer);
             ImGui::Checkbox("Show Frequency Peaks", &gui_state.show_frequency_peaks);
+            ImGui::Checkbox("Show Filtered Waveform", &gui_state.show_filtered_waveform);
             
             ImGui::End();
             
@@ -542,6 +563,39 @@ int main() {
                 ImGui::Text("Updates every ~42ms (10 frames)");
                 
                 ImGui::End();
+            }
+            
+            // Filtered waveform window
+            if (gui_state.show_filtered_waveform && gui_state.phase_lock_enabled) {
+                auto phase_config = phase_analyzer.get_config();
+                if (phase_config.use_frequency_filter && phase_analyzer.get_filtered_buffer()) {
+                    ImGui::SetNextWindowPos(ImVec2(370, 430), ImGuiCond_FirstUseEver);
+                    ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
+                    
+                    ImGui::Begin("Filtered Waveform");
+                    
+                    const float* filtered_buffer = phase_analyzer.get_filtered_buffer();
+                    size_t buffer_size = phase_analyzer.get_filtered_buffer_size();
+                    
+                    // Display a window of the filtered signal
+                    size_t display_window = std::min((size_t)1024, buffer_size);
+                    size_t start_pos = (phase_analyzer.get_phase_buffer_size() + 
+                                       phase_analyzer.get_phase_buffer_size() - display_window) % 
+                                       phase_analyzer.get_phase_buffer_size();
+                    
+                    std::vector<float> filtered_display(display_window);
+                    for (size_t i = 0; i < display_window; ++i) {
+                        filtered_display[i] = filtered_buffer[(start_pos + i) % buffer_size];
+                    }
+                    
+                    ImGui::PlotLines("Filtered Signal", filtered_display.data(), filtered_display.size(),
+                                     0, nullptr, -1.0f, 1.0f, ImVec2(0, 150));
+                    
+                    ImGui::Text("Frequency Band: %.0f - %.0f Hz", 
+                               phase_config.filter_low_frequency, phase_config.filter_high_frequency);
+                    
+                    ImGui::End();
+                }
             }
             
             // Spectrum Analyzer window

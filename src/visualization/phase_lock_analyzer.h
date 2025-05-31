@@ -15,13 +15,19 @@ public:
         int correlation_window_size;
         size_t phase_buffer_size;
         size_t display_samples;
+        bool use_frequency_filter;
+        float filter_low_frequency;
+        float filter_high_frequency;
         
         Config() 
             : phase_smoothing(0.0f)
             , correlation_threshold(0.45f)
             , correlation_window_size(300)
             , phase_buffer_size(4096)
-            , display_samples(2400) {}
+            , display_samples(2400)
+            , use_frequency_filter(false)
+            , filter_low_frequency(100.0f)
+            , filter_high_frequency(1000.0f) {}
     };
     
     struct State {
@@ -52,6 +58,14 @@ public:
     
     // Get correlation history for visualization
     const std::deque<float>& get_correlation_history() const { return correlation_history_; }
+    
+    // Get reference window for visualization
+    const float* get_reference_window() const { return reference_window_; }
+    bool has_reference() const { return has_reference_; }
+    
+    // Get filtered buffer for visualization
+    const float* get_filtered_buffer() const { return filtered_buffer_; }
+    size_t get_filtered_buffer_size() const { return filtered_buffer_size_; }
 
 private:
     Config config_;
@@ -59,6 +73,10 @@ private:
     // Phase tracking buffers
     float* phase_buffer_;
     size_t phase_write_pos_ = 0;
+    
+    // Filtered buffer for frequency-selective correlation
+    float* filtered_buffer_ = nullptr;
+    size_t filtered_buffer_size_ = 0;
     
     // Cross-correlation state
     float* reference_window_ = nullptr;
@@ -74,6 +92,7 @@ private:
     // Helper methods
     float compute_correlation(size_t offset, size_t search_start);
     void update_reference_window();
+    void apply_frequency_filter();
 };
 
 } // namespace visualization

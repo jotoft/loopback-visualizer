@@ -4,6 +4,7 @@ add_library(visualization STATIC
     fft.cpp
     frequency_analyzer.cpp
     frequency_filter.cpp
+    simple_filters.cpp
 )
 
 target_include_directories(visualization PUBLIC

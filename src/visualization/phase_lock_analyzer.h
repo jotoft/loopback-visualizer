@@ -102,7 +102,7 @@ private:
     int frames_since_reference_ = 0;
     int frames_since_good_match_ = 0;        // Frames since last good correlation
     float last_best_correlation_ = 0.0f;     // Track previous best correlation
-    float ema_alpha_ = 0.1f;                 // EMA blending factor
+    float ema_alpha_ = 0.099f;                // EMA blending factor
     
     // Correlation history
     std::deque<float> correlation_history_;

@@ -3,6 +3,9 @@
 uniform vec2 resolution;
 uniform float trigger_level;  // Trigger level for phase lock display
 uniform bool phase_lock_enabled;  // Whether phase lock is active
+uniform float waveform_alpha = 1.0;  // Alpha value for ghost trails
+uniform vec3 waveform_color = vec3(0.0, 1.0, 0.9);  // Color override for ghost trails
+uniform bool reference_mode = false;  // Using reference waveform (better antialiasing)
 
 layout(std140) uniform SamplesBlock {
     float samples[2400];
@@ -56,10 +59,12 @@ void main() {
     dist *= resolution.y;
     
     // Thin line with smooth anti-aliasing
-    float line = 1.0 - smoothstep(0.0, 1.5, dist);
+    // Use wider smoothstep for reference mode (better antialiasing)
+    float edge_width = reference_mode ? 2.0 : 1.5;
+    float line = 1.0 - smoothstep(0.0, edge_width, dist);
     
     // Base waveform color
-    vec3 color = vec3(0.0, 1.0, 0.9);
+    vec3 color = waveform_color;
     
     // Add correlation indicator when phase lock is enabled
     if (phase_lock_enabled) {
@@ -85,5 +90,5 @@ void main() {
         }
     }
     
-    FragColor = vec4(color * line, line);
+    FragColor = vec4(color * line, line * waveform_alpha);
 }

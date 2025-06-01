@@ -17,6 +17,7 @@
 #include "core/unit.h"
 #include "visualization/phase_lock_analyzer.h"
 #include "visualization/frequency_analyzer.h"
+#include "visualization/simple_filters.h"
 
 // ImGui includes
 #include "imgui.h"
@@ -39,6 +40,12 @@ const uint32_t DISPLAY_SAMPLES = width;
 static vec4 display_buffer[DISPLAY_SAMPLES];
 static float audio_read_buffer[1024];
 
+// Ghost trail buffers
+const int MAX_GHOST_TRAILS = 64;
+static vec4 ghost_trail_buffers[MAX_GHOST_TRAILS][DISPLAY_SAMPLES];
+static int ghost_trail_write_index = 0;
+static int frames_since_trail_update = 0;
+
 // GUI state
 struct GuiState {
     bool phase_lock_enabled = true;  // Enable by default
@@ -48,6 +55,11 @@ struct GuiState {
     bool show_spectrum_analyzer = true;
     bool show_frequency_peaks = true;
     bool show_filtered_waveform = true;
+    bool show_simple_filters = true;
+    bool show_reference_as_main = true;  // Show reference waveform as main display
+    bool ghost_trails_enabled = false;
+    float ghost_fade_speed = 0.02f;
+    int ghost_trail_count = 64;
     
     // Visual settings
     ImVec4 waveform_color = ImVec4(0.0f, 1.0f, 0.9f, 1.0f);
@@ -167,11 +179,12 @@ int main() {
         return true;
     };
     
-    // Initialize with loopback (system audio)
+    // Initialize with loopback (system audio output)
+    app_state.capture_input = true;  // Set to true so toggle makes it false (output)
     if (!switch_audio_source()) {
         return -1;
     }
-    app_state.capture_input = false;
+    // Now capture_input is false, meaning we're capturing system output
 
     // Load shaders
     auto soundwave_result = load_file("soundwave_optimized.glsl");
@@ -306,6 +319,9 @@ int main() {
     GLint sample_loc = glGetUniformLocation(shaderProgram, "current_sample");
     GLint trigger_level_loc = glGetUniformLocation(shaderProgram, "trigger_level");
     GLint phase_lock_enabled_loc = glGetUniformLocation(shaderProgram, "phase_lock_enabled");
+    GLint waveform_alpha_loc = glGetUniformLocation(shaderProgram, "waveform_alpha");
+    GLint waveform_color_loc = glGetUniformLocation(shaderProgram, "waveform_color");
+    GLint reference_mode_loc = glGetUniformLocation(shaderProgram, "reference_mode");
 
     // Create UBO for samples
     unsigned int ubo;
@@ -323,9 +339,10 @@ int main() {
     // Create phase lock analyzer
     visualization::PhaseLockAnalyzer::Config analyzer_config;
     analyzer_config.phase_smoothing = 0.0f;
-    analyzer_config.correlation_threshold = 0.45f;
-    analyzer_config.correlation_window_size = 300;
+    analyzer_config.correlation_threshold = 0.15f;  // Lower threshold
+    analyzer_config.correlation_window_size = 512;  // Larger window
     analyzer_config.display_samples = DISPLAY_SAMPLES;
+    analyzer_config.reference_mode = visualization::PhaseLockAnalyzer::ReferenceMode::EMA;  // Default to EMA
     
     visualization::PhaseLockAnalyzer phase_analyzer(analyzer_config);
     
@@ -338,6 +355,12 @@ int main() {
     freq_config.max_peaks = 5;
     
     visualization::FrequencyAnalyzer freq_analyzer(freq_config);
+    
+    // Create simple filters
+    visualization::SimpleFilters::Config filter_config;
+    filter_config.sample_rate = 44100.0f;
+    // High-pass filter is enabled by default in the Config constructor
+    visualization::SimpleFilters simple_filters(filter_config);
     
     // FPS calculation
     double last_fps_time = glfwGetTime();
@@ -378,8 +401,23 @@ int main() {
         size_t samples_read = audio_capture->read_samples(audio_read_buffer, available);
         
         if (samples_read > 0) {
-            phase_analyzer.add_samples(audio_read_buffer, samples_read);
-            freq_analyzer.process_samples(audio_read_buffer, samples_read);
+            // Apply simple filters to audio before phase analysis if enabled
+            auto& filter_cfg = simple_filters.get_config();
+            if (filter_cfg.highpass_enabled || filter_cfg.lowpass_enabled || filter_cfg.deesser_enabled) {
+                // Create a copy for filtering
+                std::vector<float> filtered_samples(audio_read_buffer, audio_read_buffer + samples_read);
+                simple_filters.process(filtered_samples.data(), filtered_samples.size());
+                
+                // Use filtered samples for phase analysis
+                phase_analyzer.add_samples(filtered_samples.data(), samples_read);
+                
+                // Use unfiltered for frequency analysis (to see full spectrum)
+                freq_analyzer.process_samples(audio_read_buffer, samples_read);
+            } else {
+                // No filters - use raw samples
+                phase_analyzer.add_samples(audio_read_buffer, samples_read);
+                freq_analyzer.process_samples(audio_read_buffer, samples_read);
+            }
         }
         
         // Update analyzer config if changed
@@ -389,16 +427,58 @@ int main() {
         // Analyze phase
         auto state = phase_analyzer.analyze(gui_state.phase_lock_enabled);
         
-        // Fill display buffer from phase buffer
-        const float* phase_buffer = phase_analyzer.get_phase_buffer();
-        size_t read_pos = state.read_position;
+        // Fill display buffer
+        std::vector<float> temp_samples(DISPLAY_SAMPLES);
         
+        if (gui_state.show_reference_as_main && gui_state.phase_lock_enabled && phase_analyzer.has_reference()) {
+            // Use reference waveform with upsampling/interpolation
+            const float* ref_window = phase_analyzer.get_reference_window();
+            const auto& config = phase_analyzer.get_config();
+            int ref_size = config.correlation_window_size;
+            
+            // Upsample reference waveform to display size with cubic interpolation
+            float scale = (float)(ref_size - 1) / (float)(DISPLAY_SAMPLES - 1);
+            
+            for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
+                float pos = i * scale;
+                int idx = (int)pos;
+                float frac = pos - idx;
+                
+                if (idx < ref_size - 3) {
+                    // Cubic interpolation for smoother waveform
+                    float y0 = (idx > 0) ? ref_window[idx - 1] : ref_window[0];
+                    float y1 = ref_window[idx];
+                    float y2 = ref_window[idx + 1];
+                    float y3 = (idx < ref_size - 2) ? ref_window[idx + 2] : ref_window[ref_size - 1];
+                    
+                    float a0 = y3 - y2 - y0 + y1;
+                    float a1 = y0 - y1 - a0;
+                    float a2 = y2 - y0;
+                    float a3 = y1;
+                    
+                    temp_samples[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
+                } else {
+                    // Linear interpolation at edges
+                    int idx_safe = std::min(idx, ref_size - 2);
+                    temp_samples[i] = ref_window[idx_safe] * (1.0f - frac) + ref_window[idx_safe + 1] * frac;
+                }
+            }
+        } else {
+            // Use normal phase buffer
+            const float* phase_buffer = phase_analyzer.get_phase_buffer();
+            size_t read_pos = state.read_position;
+            
+            for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
+                temp_samples[i] = phase_buffer[(read_pos + i) % phase_analyzer.get_phase_buffer_size()];
+            }
+        }
+        
+        // Copy samples to display buffer (already filtered if filters are enabled)
         for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-            display_buffer[i].x = phase_buffer[read_pos];
+            display_buffer[i].x = temp_samples[i];
             display_buffer[i].y = 0.0f;
             display_buffer[i].z = 0.0f;
             display_buffer[i].w = 0.0f;
-            read_pos = (read_pos + 1) % phase_analyzer.get_phase_buffer_size();
         }
         
         // Upload to GPU
@@ -414,11 +494,84 @@ int main() {
         glUniform1i(sample_loc, 0);
         glUniform1f(trigger_level_loc, state.best_correlation);
         glUniform1i(phase_lock_enabled_loc, gui_state.phase_lock_enabled ? 1 : 0);
+        glUniform1i(reference_mode_loc, gui_state.show_reference_as_main ? 1 : 0);
         
-        // Clear and draw
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        // Ghost trails effect
+        if (gui_state.ghost_trails_enabled) {
+            // Enable blending for ghost trails
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            
+            // Clear once at the beginning
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            
+            // Update ghost trail buffers periodically
+            frames_since_trail_update++;
+            // Update more frequently when correlation is poor (more chaotic waveform)
+            int update_interval = gui_state.phase_lock_enabled ? 
+                                 (int)(2 + state.best_correlation * 3) : 2;  // 2-5 frames based on correlation
+            
+            if (frames_since_trail_update > update_interval) {
+                // Copy current display buffer to ghost trail
+                std::memcpy(ghost_trail_buffers[ghost_trail_write_index], 
+                           display_buffer, sizeof(display_buffer));
+                ghost_trail_write_index = (ghost_trail_write_index + 1) % gui_state.ghost_trail_count;
+                frames_since_trail_update = 0;
+            }
+            
+            // Draw all ghost trails with decreasing opacity
+            for (int i = gui_state.ghost_trail_count - 1; i >= 0; i--) {
+                int trail_idx = (ghost_trail_write_index - i - 1 + gui_state.ghost_trail_count) 
+                               % gui_state.ghost_trail_count;
+                float age = (float)i / gui_state.ghost_trail_count;
+                float alpha = (1.0f - age) * 0.5f;
+                
+                // Upload ghost trail buffer
+                glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+                void* ghost_ptr = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(display_buffer),
+                                                  GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+                if (ghost_ptr) {
+                    memcpy(ghost_ptr, ghost_trail_buffers[trail_idx], sizeof(display_buffer));
+                    glUnmapBuffer(GL_UNIFORM_BUFFER);
+                }
+                
+                // Set alpha and color in shader
+                // Fade faster when correlation is poor
+                float correlation_factor = gui_state.phase_lock_enabled ? state.best_correlation : 1.0f;
+                float dynamic_fade = gui_state.ghost_fade_speed * (2.0f - correlation_factor * 1.5f);
+                glUniform1f(waveform_alpha_loc, alpha * (1.0f - dynamic_fade * 4.0f));
+                
+                // Color shift - older trails become more purple/blue
+                float r = 0.5f - 0.3f * age;
+                float g = 0.8f - 0.3f * age;
+                float b = 0.9f + 0.1f * age;
+                glUniform3f(waveform_color_loc, r, g, b);
+                
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
+            
+            // Draw current waveform on top with full opacity
+            glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+            void* ptr2 = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(display_buffer),
+                                         GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+            if (ptr2) {
+                memcpy(ptr2, display_buffer, sizeof(display_buffer));
+                glUnmapBuffer(GL_UNIFORM_BUFFER);
+            }
+            glUniform1f(waveform_alpha_loc, 1.0f);
+            glUniform3f(waveform_color_loc, 0.0f, 1.0f, 0.9f);  // Reset to default color
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            glDisable(GL_BLEND);
+        } else {
+            // Normal rendering - clear and draw
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glUniform1f(waveform_alpha_loc, 1.0f);
+            glUniform3f(waveform_color_loc, 0.0f, 1.0f, 0.9f);  // Default color
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
         
         // ImGui rendering
         {
@@ -506,6 +659,25 @@ int main() {
                     if (ImGui::Button("Reset Reference")) {
                         phase_analyzer.reset();
                     }
+                    
+                    ImGui::Separator();
+                    
+                    // Option to show reference waveform as main display
+                    if (phase_analyzer.has_reference()) {
+                        if (ImGui::Checkbox("Show Reference as Main", &gui_state.show_reference_as_main)) {
+                            // Nothing extra needed, will be handled in render loop
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Display the upsampled reference waveform with better antialiasing");
+                        }
+                        
+                        if (gui_state.show_reference_as_main) {
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.8f, 1.0f), 
+                                             "Displaying reference waveform (%d → %d samples)",
+                                             config.correlation_window_size, DISPLAY_SAMPLES);
+                            ImGui::Text("Using cubic interpolation for smooth rendering");
+                        }
+                    }
                 }
             }
             
@@ -545,6 +717,28 @@ int main() {
                 ImGui::ColorEdit3("Good Lock Color", (float*)&gui_state.good_lock_color);
                 ImGui::ColorEdit3("Moderate Lock Color", (float*)&gui_state.moderate_lock_color);
                 ImGui::ColorEdit3("Poor Lock Color", (float*)&gui_state.poor_lock_color);
+                
+                ImGui::Separator();
+                ImGui::Text("Ghost Trails");
+                ImGui::Checkbox("Enable Ghost Trails", &gui_state.ghost_trails_enabled);
+                
+                if (gui_state.ghost_trails_enabled) {
+                    ImGui::SliderFloat("Fade Speed", &gui_state.ghost_fade_speed, 0.001f, 0.1f, "%.3f");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Lower = longer trails, Higher = faster fade");
+                    }
+                    
+                    // Show dynamic fade info when phase lock is enabled
+                    if (gui_state.phase_lock_enabled) {
+                        float correlation_factor = state.best_correlation;
+                        float dynamic_fade = gui_state.ghost_fade_speed * (2.0f - correlation_factor * 1.5f);
+                        ImGui::Text("Dynamic fade rate: %.3f", dynamic_fade);
+                        ImGui::Text("(Based on correlation: %.2f)", correlation_factor);
+                        
+                        // Visual indicator bar
+                        ImGui::ProgressBar(1.0f - dynamic_fade * 10.0f, ImVec2(-1, 0), "Trail Persistence");
+                    }
+                }
             }
             
             ImGui::Separator();
@@ -554,6 +748,7 @@ int main() {
             ImGui::Checkbox("Show Spectrum Analyzer", &gui_state.show_spectrum_analyzer);
             ImGui::Checkbox("Show Frequency Peaks", &gui_state.show_frequency_peaks);
             ImGui::Checkbox("Show Filtered Waveform", &gui_state.show_filtered_waveform);
+            ImGui::Checkbox("Show Simple Filters", &gui_state.show_simple_filters);
             
             ImGui::End();
             
@@ -745,6 +940,152 @@ int main() {
                     
                     ImGui::PlotLines("Frequency (Hz)", freq_history.data(), freq_history.size(),
                                      0, nullptr, 0.0f, 2000.0f, ImVec2(0, 80));
+                }
+                
+                ImGui::End();
+            }
+            
+            // Simple Filters window
+            if (gui_state.show_simple_filters) {
+                ImGui::SetNextWindowPos(ImVec2(1290, 10), ImGuiCond_FirstUseEver);
+                ImGui::SetNextWindowSize(ImVec2(400, 450), ImGuiCond_FirstUseEver);
+                
+                ImGui::Begin("Simple Filters");
+                
+                auto filter_config = simple_filters.get_config();
+                bool config_changed = false;
+                
+                // Info text
+                ImGui::TextWrapped("Filters affect both visualization and phase locking");
+                ImGui::Separator();
+                
+                // High-pass filter section
+                if (ImGui::CollapsingHeader("High-Pass Filter", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (ImGui::Checkbox("Enable High-Pass", &filter_config.highpass_enabled)) {
+                        config_changed = true;
+                    }
+                    
+                    if (filter_config.highpass_enabled) {
+                        if (ImGui::SliderFloat("HP Cutoff (Hz)", &filter_config.highpass_cutoff, 
+                                              20.0f, 2000.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Removes frequencies below this value");
+                        }
+                        
+                        if (ImGui::SliderFloat("HP Resonance", &filter_config.highpass_resonance, 
+                                              0.5f, 2.0f, "%.2f")) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Q factor - higher values create sharper cutoff");
+                        }
+                    }
+                }
+                
+                ImGui::Separator();
+                
+                // Low-pass filter section
+                if (ImGui::CollapsingHeader("Low-Pass Filter", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (ImGui::Checkbox("Enable Low-Pass", &filter_config.lowpass_enabled)) {
+                        config_changed = true;
+                    }
+                    
+                    if (filter_config.lowpass_enabled) {
+                        if (ImGui::SliderFloat("LP Cutoff (Hz)", &filter_config.lowpass_cutoff, 
+                                              200.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Removes frequencies above this value");
+                        }
+                        
+                        if (ImGui::SliderFloat("LP Resonance", &filter_config.lowpass_resonance, 
+                                              0.5f, 2.0f, "%.2f")) {
+                            config_changed = true;
+                        }
+                    }
+                }
+                
+                ImGui::Separator();
+                
+                // De-esser section
+                if (ImGui::CollapsingHeader("De-Esser", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (ImGui::Checkbox("Enable De-Esser", &filter_config.deesser_enabled)) {
+                        config_changed = true;
+                    }
+                    
+                    if (filter_config.deesser_enabled) {
+                        if (ImGui::SliderFloat("Center Freq (Hz)", &filter_config.deesser_frequency, 
+                                              2000.0f, 10000.0f, "%.0f")) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Center frequency for sibilance detection");
+                        }
+                        
+                        if (ImGui::SliderFloat("Bandwidth (Hz)", &filter_config.deesser_bandwidth, 
+                                              500.0f, 4000.0f, "%.0f")) {
+                            config_changed = true;
+                        }
+                        
+                        if (ImGui::SliderFloat("Threshold", &filter_config.deesser_threshold, 
+                                              0.1f, 0.9f, "%.2f")) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Level at which de-essing begins");
+                        }
+                        
+                        if (ImGui::SliderFloat("Reduction", &filter_config.deesser_ratio, 
+                                              0.0f, 1.0f, "%.2f")) {
+                            config_changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Amount of sibilance reduction (0=none, 1=full)");
+                        }
+                        
+                        // Show de-esser activity
+                        float envelope = simple_filters.get_deesser_envelope();
+                        ImGui::Text("Sibilance Level:");
+                        ImGui::ProgressBar(envelope, ImVec2(-1, 0));
+                    }
+                }
+                
+                ImGui::Separator();
+                
+                // Filter combination info
+                if ((filter_config.highpass_enabled ? 1 : 0) + 
+                    (filter_config.lowpass_enabled ? 1 : 0) + 
+                    (filter_config.deesser_enabled ? 1 : 0) > 0) {
+                    ImGui::Text("Active filters:");
+                    if (filter_config.highpass_enabled) {
+                        ImGui::BulletText("High-pass: %.0f Hz", filter_config.highpass_cutoff);
+                    }
+                    if (filter_config.lowpass_enabled) {
+                        ImGui::BulletText("Low-pass: %.0f Hz", filter_config.lowpass_cutoff);
+                    }
+                    if (filter_config.deesser_enabled) {
+                        ImGui::BulletText("De-esser: %.0f Hz", filter_config.deesser_frequency);
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No filters active");
+                }
+                
+                ImGui::Separator();
+                
+                if (ImGui::Button("Reset All Filters")) {
+                    filter_config = visualization::SimpleFilters::Config();
+                    filter_config.sample_rate = 44100.0f;
+                    config_changed = true;
+                    simple_filters.reset();
+                }
+                
+                if (config_changed) {
+                    simple_filters.set_config(filter_config);
+                    // Reset phase analyzer since filtered signal has changed
+                    phase_analyzer.reset();
                 }
                 
                 ImGui::End();

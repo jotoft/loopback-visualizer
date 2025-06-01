@@ -6,8 +6,6 @@
 #include <thread>
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
-#include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -18,8 +16,11 @@
 #include "visualization/phase_lock_analyzer.h"
 #include "visualization/frequency_analyzer.h"
 #include "visualization/simple_filters.h"
+#include "shaders_embedded.h"
 
 // ImGui includes
+#include <fstream>
+
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -186,22 +187,9 @@ int main() {
     }
     // Now capture_input is false, meaning we're capturing system output
 
-    // Load shaders
-    auto soundwave_result = load_file("soundwave_optimized.glsl");
-    auto vertex_result = load_file("basic_vertex.glsl");
-
-    if (soundwave_result.is_err()) {
-        std::cerr << "Failed to load soundwave shader: " << soundwave_result.error() << std::endl;
-        return -1;
-    }
-
-    if (vertex_result.is_err()) {
-        std::cerr << "Failed to load vertex shader: " << vertex_result.error() << std::endl;
-        return -1;
-    }
-
-    auto soundwave_shader_text = std::move(soundwave_result).unwrap();
-    auto basic_vertex_text = std::move(vertex_result).unwrap();
+    // Use embedded shaders
+    std::string soundwave_shader_text(shaders::soundwave_optimized_shader);
+    std::string basic_vertex_text(shaders::basic_vertex_shader);
 
     // Initialize GLFW
     if (!glfwInit()) return -1;

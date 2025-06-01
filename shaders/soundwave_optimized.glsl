@@ -81,13 +81,13 @@ void main() {
         }
         
         // Show correlation bar at bottom
-        if (uv.y < 0.02) {
-            float bar_progress = uv.x;
-            if (bar_progress < trigger_level) {
-                color = vec3(0.0, trigger_level, 1.0 - trigger_level);
-                line = 1.0;
-            }
-        }
+//        if (uv.y < 0.02) {
+//            float bar_progress = uv.x/10.0;
+//            if (bar_progress < trigger_level) {
+//                color = vec3(0.0, trigger_level, 1.0 - trigger_level);
+//                line = 1.0;
+//            }
+//        }
     }
     
     FragColor = vec4(color * line, line * waveform_alpha);

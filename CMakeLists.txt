@@ -32,6 +32,11 @@ add_subdirectory(src)
 add_subdirectory(tests)
 add_executable(visualizer src/main.cpp)
 add_executable(audio_example audio_example.cpp)
+
+# Include shader embedding
+include(cmake/EmbedShaders.cmake)
+embed_shaders(visualizer shaders_embedded.h)
+
 target_link_libraries(visualizer audio_loopback audio_filters visualization glfw glad::glad core imgui)
 target_link_libraries(audio_example audio_loopback core)
 

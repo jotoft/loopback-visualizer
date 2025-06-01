@@ -140,13 +140,8 @@ PhaseLockAnalyzer::State PhaseLockAnalyzer::analyze(bool phase_lock_enabled) {
     } else {
         frames_since_good_match_++;
         
-        // Reset reference if we haven't had a good match for a while (2 seconds at 240fps)
-        if (frames_since_good_match_ > 480 && has_reference_) {
-            has_reference_ = false;
-            reference_count_ = 0;
-            frames_since_good_match_ = 0;
-            // Next good match will reinitialize the reference
-        }
+        // Don't automatically reset - let user manually reset if needed
+        // This keeps the reference stable even during periods of poor correlation
     }
     
     last_best_correlation_ = max_correlation;

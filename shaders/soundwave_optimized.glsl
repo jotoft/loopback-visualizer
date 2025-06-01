@@ -63,21 +63,39 @@ void main() {
     float edge_width = reference_mode ? 2.0 : 1.5;
     float line = 1.0 - smoothstep(0.0, edge_width, dist);
     
-    // Base waveform color
-    vec3 color = waveform_color;
+    // Rainbow effect based on position and sample value
+    float hue = uv.x * 2.0 + sample_value * 0.5;
+    
+    // Simple HSV to RGB conversion
+    float h = mod(hue, 1.0) * 6.0;
+    float c = 0.8; // saturation
+    float x = c * (1.0 - abs(mod(h, 2.0) - 1.0));
+    
+    vec3 rgb;
+    if (h < 1.0) rgb = vec3(c, x, 0.0);
+    else if (h < 2.0) rgb = vec3(x, c, 0.0);
+    else if (h < 3.0) rgb = vec3(0.0, c, x);
+    else if (h < 4.0) rgb = vec3(0.0, x, c);
+    else if (h < 5.0) rgb = vec3(x, 0.0, c);
+    else rgb = vec3(c, 0.0, x);
+    
+    vec3 rainbow = rgb + vec3(0.2); // add brightness
+    
+    // Mix rainbow with base color
+    vec3 color = mix(waveform_color, rainbow, 0.7);
     
     // Add correlation indicator when phase lock is enabled
     if (phase_lock_enabled) {
         // Change color based on correlation quality
         if (trigger_level > 0.7) {
-            // Good lock - green tint
-            color = mix(color, vec3(0.0, 1.0, 0.0), 0.3);
+            // Good lock - enhance cyan/blue
+            color = mix(color, vec3(0.0, 0.8, 1.0), 0.4);
         } else if (trigger_level > 0.5) {
-            // Moderate lock - yellow tint
-            color = mix(color, vec3(1.0, 1.0, 0.0), 0.3);
+            // Moderate lock - enhance yellow/orange
+            color = mix(color, vec3(1.0, 0.7, 0.0), 0.4);
         } else {
-            // Poor lock - red tint
-            color = mix(color, vec3(1.0, 0.0, 0.0), 0.3);
+            // Poor lock - enhance red/purple
+            color = mix(color, vec3(1.0, 0.0, 0.5), 0.4);
         }
         
         // Show correlation bar at bottom

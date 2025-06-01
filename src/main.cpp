@@ -209,6 +209,16 @@ int main() {
     glfwGetWindowSize(window, &window_width, &window_height);
     float dpi_scale = (float)fb_width / (float)window_width;
     
+    // Store window state for fullscreen toggle
+    struct WindowState {
+        int x, y, width, height;
+        bool is_fullscreen = false;
+    } window_state;
+    
+    // Get initial window position and size
+    glfwGetWindowPos(window, &window_state.x, &window_state.y);
+    glfwGetWindowSize(window, &window_state.width, &window_state.height);
+    
     std::cout << "Window size: " << width << "x900, Framebuffer: " << fb_width << "x" << fb_height << std::endl;
     std::cout << "DPI scale: " << dpi_scale << std::endl;
     
@@ -372,6 +382,40 @@ int main() {
     
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        
+        // Handle fullscreen toggle (F11 or Alt+Enter)
+        if ((glfwGetKey(window, GLFW_KEY_F11) == GLFW_PRESS) ||
+            (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS && 
+             (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS || 
+              glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS))) {
+            static bool key_was_pressed = false;
+            if (!key_was_pressed) {
+                key_was_pressed = true;
+                
+                if (!window_state.is_fullscreen) {
+                    // Save current window position and size
+                    glfwGetWindowPos(window, &window_state.x, &window_state.y);
+                    glfwGetWindowSize(window, &window_state.width, &window_state.height);
+                    
+                    // Get primary monitor and its video mode
+                    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+                    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+                    
+                    // Set windowed fullscreen
+                    glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+                    window_state.is_fullscreen = true;
+                } else {
+                    // Restore windowed mode
+                    glfwSetWindowMonitor(window, nullptr, window_state.x, window_state.y, 
+                                       window_state.width, window_state.height, 0);
+                    window_state.is_fullscreen = false;
+                }
+            }
+        } else if (glfwGetKey(window, GLFW_KEY_F11) == GLFW_RELEASE &&
+                   glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_RELEASE) {
+            static bool key_was_pressed = true;
+            key_was_pressed = false;
+        }
         
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -574,6 +618,33 @@ int main() {
             
             ImGui::Separator();
             
+            // Window controls
+            if (ImGui::Button(window_state.is_fullscreen ? "Exit Fullscreen (F11)" : "Fullscreen (F11)")) {
+                if (!window_state.is_fullscreen) {
+                    // Save current window position and size
+                    glfwGetWindowPos(window, &window_state.x, &window_state.y);
+                    glfwGetWindowSize(window, &window_state.width, &window_state.height);
+                    
+                    // Get primary monitor and its video mode
+                    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+                    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+                    
+                    // Set windowed fullscreen
+                    glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+                    window_state.is_fullscreen = true;
+                } else {
+                    // Restore windowed mode
+                    glfwSetWindowMonitor(window, nullptr, window_state.x, window_state.y, 
+                                       window_state.width, window_state.height, 0);
+                    window_state.is_fullscreen = false;
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Toggle fullscreen mode (Alt+Enter also works)");
+            }
+            
+            ImGui::Separator();
+            
             // Phase Lock Settings
             if (ImGui::CollapsingHeader("Phase Lock Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::Checkbox("Enable Phase Lock", &gui_state.phase_lock_enabled);
@@ -587,7 +658,7 @@ int main() {
                     if (ImGui::SliderFloat("Phase Smoothing", &config.phase_smoothing, 0.0f, 0.99f)) {
                         phase_analyzer.set_config(config);
                     }
-                    if (ImGui::SliderFloat("Correlation Threshold", &config.correlation_threshold, 0.1f, 0.95f)) {
+                    if (ImGui::SliderFloat("Correlation Threshold", &config.correlation_threshold, 0.001f, 0.99f, "%.3f", ImGuiSliderFlags_Logarithmic)) {
                         phase_analyzer.set_config(config);
                     }
                     if (ImGui::SliderInt("Correlation Window", &config.correlation_window_size, 128, 1024)) {
@@ -617,7 +688,7 @@ int main() {
                         }
                     } else {
                         float ema_alpha = phase_analyzer.get_ema_alpha();
-                        if (ImGui::SliderFloat("EMA Alpha", &ema_alpha, 0.01f, 0.5f, "%.3f")) {
+                        if (ImGui::SliderFloat("EMA Alpha", &ema_alpha, 0.001f, 0.999f, "%.3f", ImGuiSliderFlags_Logarithmic)) {
                             phase_analyzer.set_ema_alpha(ema_alpha);
                         }
                         if (ImGui::IsItemHovered()) {

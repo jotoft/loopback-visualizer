@@ -608,11 +608,32 @@ int main() {
                         const auto& config = bank.analyzer->get_config();
                         int ref_size = config.correlation_window_size;
                         
-                        // Repeat the pattern to fill display instead of stretching
+                        // Stretch the pattern with cubic interpolation to fill display
+                        float scale = (float)(ref_size - 1) / (float)(DISPLAY_SAMPLES - 1);
+                        
                         for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-                            // Use modulo to repeat the pattern
-                            int src_idx = i % ref_size;
-                            bank.buffer[i] = ref_window[src_idx];
+                            float pos = i * scale;
+                            int idx = (int)pos;
+                            float frac = pos - idx;
+                            
+                            if (idx < ref_size - 3) {
+                                // Cubic interpolation for smoother waveform
+                                float y0 = (idx > 0) ? ref_window[idx - 1] : ref_window[0];
+                                float y1 = ref_window[idx];
+                                float y2 = ref_window[idx + 1];
+                                float y3 = (idx < ref_size - 2) ? ref_window[idx + 2] : ref_window[ref_size - 1];
+                                
+                                float a0 = y3 - y2 - y0 + y1;
+                                float a1 = y0 - y1 - a0;
+                                float a2 = y2 - y0;
+                                float a3 = y1;
+                                
+                                bank.buffer[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
+                            } else {
+                                // Linear interpolation at edges
+                                int idx_safe = std::min(idx, ref_size - 2);
+                                bank.buffer[i] = ref_window[idx_safe] * (1.0f - frac) + ref_window[idx_safe + 1] * frac;
+                            }
                         }
                     }
                 }
@@ -627,25 +648,14 @@ int main() {
                 
                 // Determine which buffer to fill based on mode
                 float* target_buffer = temp_samples.data();
-                bool should_repeat = false;
                 if (gui_state.template_mode == GuiState::TemplateBankMode::BANK2_ONLY) {
                     target_buffer = temp_samples2.data();
-                    should_repeat = true;  // Bank 2 has smaller window
                 } else if (gui_state.template_mode == GuiState::TemplateBankMode::BANK3_ONLY) {
                     target_buffer = temp_samples3.data();
-                    should_repeat = true;  // Bank 3 has smaller window
                 }
                 
-                if (should_repeat || gui_state.template_mode == GuiState::TemplateBankMode::BLEND_ADD ||
-                    gui_state.template_mode == GuiState::TemplateBankMode::BLEND_MAX ||
-                    gui_state.template_mode == GuiState::TemplateBankMode::ALL_LAYERED) {
-                    // Repeat pattern for smaller windows or blending modes
-                    for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-                        int src_idx = i % ref_size;
-                        target_buffer[i] = ref_window[src_idx];
-                    }
-                } else {
-                    // Bank 1 only - use stretching with interpolation for smoother display
+                // Always use stretching with interpolation for all banks
+                {
                     for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
                         float pos = i * scale;
                         int idx = (int)pos;
@@ -695,11 +705,35 @@ int main() {
                 const float* phase_buffer2 = phase_analyzer2.get_phase_buffer();
                 size_t read_pos2 = state2.read_position;
                 
-                // Bank 2 has 1024 window, repeat pattern to fill display
+                // Bank 2 has 1024 window, stretch with interpolation to fill display
                 int window_size2 = 1024;
+                float scale2 = (float)(window_size2 - 1) / (float)(DISPLAY_SAMPLES - 1);
+                
                 for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-                    int pattern_pos = i % window_size2;
-                    temp_samples2[i] = phase_buffer2[(read_pos2 + pattern_pos) % phase_analyzer2.get_phase_buffer_size()];
+                    float pos = i * scale2;
+                    int idx = (int)pos;
+                    float frac = pos - idx;
+                    
+                    if (idx < window_size2 - 3) {
+                        // Cubic interpolation
+                        float y0 = (idx > 0) ? phase_buffer2[(read_pos2 + idx - 1) % phase_analyzer2.get_phase_buffer_size()] : phase_buffer2[(read_pos2 + 0) % phase_analyzer2.get_phase_buffer_size()];
+                        float y1 = phase_buffer2[(read_pos2 + idx) % phase_analyzer2.get_phase_buffer_size()];
+                        float y2 = phase_buffer2[(read_pos2 + idx + 1) % phase_analyzer2.get_phase_buffer_size()];
+                        float y3 = (idx < window_size2 - 2) ? phase_buffer2[(read_pos2 + idx + 2) % phase_analyzer2.get_phase_buffer_size()] : phase_buffer2[(read_pos2 + window_size2 - 1) % phase_analyzer2.get_phase_buffer_size()];
+                        
+                        float a0 = y3 - y2 - y0 + y1;
+                        float a1 = y0 - y1 - a0;
+                        float a2 = y2 - y0;
+                        float a3 = y1;
+                        
+                        temp_samples2[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
+                    } else {
+                        // Linear interpolation at edges
+                        int idx_safe = std::min(idx, window_size2 - 2);
+                        float y0 = phase_buffer2[(read_pos2 + idx_safe) % phase_analyzer2.get_phase_buffer_size()];
+                        float y1 = phase_buffer2[(read_pos2 + idx_safe + 1) % phase_analyzer2.get_phase_buffer_size()];
+                        temp_samples2[i] = y0 * (1.0f - frac) + y1 * frac;
+                    }
                 }
                 
                 // Debug: Check if we got any data
@@ -723,11 +757,35 @@ int main() {
                 const float* phase_buffer3 = phase_analyzer3.get_phase_buffer();
                 size_t read_pos3 = state3.read_position;
                 
-                // Bank 3 has 512 window, repeat pattern to fill display
+                // Bank 3 has 512 window, stretch with interpolation to fill display
                 int window_size3 = 512;
+                float scale3 = (float)(window_size3 - 1) / (float)(DISPLAY_SAMPLES - 1);
+                
                 for (size_t i = 0; i < DISPLAY_SAMPLES; ++i) {
-                    int pattern_pos = i % window_size3;
-                    temp_samples3[i] = phase_buffer3[(read_pos3 + pattern_pos) % phase_analyzer3.get_phase_buffer_size()];
+                    float pos = i * scale3;
+                    int idx = (int)pos;
+                    float frac = pos - idx;
+                    
+                    if (idx < window_size3 - 3) {
+                        // Cubic interpolation
+                        float y0 = (idx > 0) ? phase_buffer3[(read_pos3 + idx - 1) % phase_analyzer3.get_phase_buffer_size()] : phase_buffer3[(read_pos3 + 0) % phase_analyzer3.get_phase_buffer_size()];
+                        float y1 = phase_buffer3[(read_pos3 + idx) % phase_analyzer3.get_phase_buffer_size()];
+                        float y2 = phase_buffer3[(read_pos3 + idx + 1) % phase_analyzer3.get_phase_buffer_size()];
+                        float y3 = (idx < window_size3 - 2) ? phase_buffer3[(read_pos3 + idx + 2) % phase_analyzer3.get_phase_buffer_size()] : phase_buffer3[(read_pos3 + window_size3 - 1) % phase_analyzer3.get_phase_buffer_size()];
+                        
+                        float a0 = y3 - y2 - y0 + y1;
+                        float a1 = y0 - y1 - a0;
+                        float a2 = y2 - y0;
+                        float a3 = y1;
+                        
+                        temp_samples3[i] = a0 * frac * frac * frac + a1 * frac * frac + a2 * frac + a3;
+                    } else {
+                        // Linear interpolation at edges
+                        int idx_safe = std::min(idx, window_size3 - 2);
+                        float y0 = phase_buffer3[(read_pos3 + idx_safe) % phase_analyzer3.get_phase_buffer_size()];
+                        float y1 = phase_buffer3[(read_pos3 + idx_safe + 1) % phase_analyzer3.get_phase_buffer_size()];
+                        temp_samples3[i] = y0 * (1.0f - frac) + y1 * frac;
+                    }
                 }
             }
         }
